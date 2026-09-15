@@ -41,7 +41,7 @@ subprojects {
     }
 
     android {
-        namespace = "com.uchiharepo"
+        namespace = "com.uchiharepo.${project.name.lowercase()}"
         compileSdk = 35
 
         defaultConfig {
