@@ -43,15 +43,21 @@ jobs:
         with:
           gradle-version: "8.12"
 
+      - name: Normalize Manifests & Prepare Environment
+        run: |
+          # Remove any legacy package attribute from AndroidManifest.xml files to avoid AGP namespace conflict
+          find . -name "AndroidManifest.xml" -exec sed -i 's/package="[^"]*"//g' {} +
+          echo "Manifests sanitized."
+
       - name: Build Plugins & Manifests
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew make makePluginsJson
+            ./gradlew make makePluginsJson --stacktrace || ./gradlew :UchihaPlugin:make :HiAnimePlugin:make --stacktrace
           else
-            gradle make makePluginsJson
+            gradle make makePluginsJson --stacktrace || gradle :UchihaPlugin:make :HiAnimePlugin:make --stacktrace
           fi
 
       - name: Ensure Real Plugin Name & Valid SHA256 Hashes
@@ -59,27 +65,42 @@ jobs:
           python3 -c "
           import json, glob, zipfile, os, hashlib
 
+          PLUGIN_META = {
+              'UchihaPlugin': {
+                  'name': 'Blakite Anime',
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+              },
+              'HiAnimePlugin': {
+                  'name': 'HiAnime',
+                  'iconUrl': 'https://hianimes.se/assets/logo.png'
+              }
+          }
+
           # 1. Update manifest.json inside any generated .cs3 files and recalculate hashes
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               print(f'Checking {cs3_file}...')
+              base = os.path.basename(cs3_file)
               with zipfile.ZipFile(cs3_file, 'r') as zin:
                   items = {name: zin.read(name) for name in zin.namelist()}
               if 'manifest.json' in items:
                   manifest = json.loads(items['manifest.json'].decode('utf-8'))
-                  manifest['name'] = 'Blakite Anime'
+                  for plugin_key, meta in PLUGIN_META.items():
+                      if plugin_key in base or manifest.get('internalName') == plugin_key:
+                          manifest['name'] = meta['name']
+                          if 'iconUrl' in meta:
+                              manifest['iconUrl'] = meta['iconUrl']
+                          print(f'Set name to {meta[\"name\"]} inside {cs3_file}')
                   items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
                   with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                       for name, data in items.items():
                           zout.writestr(name, data)
-                  print(f'Successfully set name to Blakite Anime inside {cs3_file}')
               
               # Calculate exact new hash and size
               with open(cs3_file, 'rb') as f:
                   content = f.read()
               h = 'sha256-' + hashlib.sha256(content).hexdigest()
               sz = len(content)
-              base = os.path.basename(cs3_file)
               cs3_hashes[base] = (h, sz)
               print(f'{base} -> hash: {h}, size: {sz}')
 
@@ -89,10 +110,13 @@ jobs:
                   with open(pjson, 'r') as f:
                       data = json.load(f)
                   for item in data:
-                      item['name'] = 'Blakite Anime'
-                      item['iconUrl'] = 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+                      iname = item.get('internalName', '')
+                      for plugin_key, meta in PLUGIN_META.items():
+                          if iname == plugin_key or plugin_key in item.get('url', ''):
+                              item['name'] = meta['name']
+                              item['iconUrl'] = meta['iconUrl']
                       for base, (h, sz) in cs3_hashes.items():
-                          if base in item.get('url', '') or item.get('internalName') in base:
+                          if base in item.get('url', '') or iname in base:
                               item['fileHash'] = h
                               item['fileSize'] = sz
                               print(f'Synced {pjson} [{item.get(\"name\")}] with hash {h} and size {sz}')
@@ -108,7 +132,7 @@ jobs:
           
           # Find and collect all generated .cs3 and .jar files
           find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
+          find . -name "*.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
           
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
