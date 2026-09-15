@@ -245,7 +245,7 @@ class HiAnimeProvider : MainAPI() {
                 this.tags = anime.genres
                 this.year = year
                 if (!anime.score.isNullOrBlank()) {
-                    this.score = Score.from10(anime.score)
+                    this.rating = ratingStr?.toDoubleOrNull()?.let { (it * 1000).toInt() }
                 }
             }
         }
@@ -257,7 +257,7 @@ class HiAnimeProvider : MainAPI() {
             this.year = year
             this.showStatus = status
             if (!anime.score.isNullOrBlank()) {
-                this.score = Score.from10(anime.score)
+                this.rating = ratingStr?.toDoubleOrNull()?.let { (it * 1000).toInt() }
             }
         }
     }
