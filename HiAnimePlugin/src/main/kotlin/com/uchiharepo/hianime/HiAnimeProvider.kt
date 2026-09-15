@@ -178,13 +178,8 @@ class HiAnimeProvider : MainAPI() {
         val itemUrl = "$mainUrl/anime/$chosenSlug"
 
         return newAnimeSearchResponse(displayTitle, itemUrl, TvType.Anime) {
-            this.posterUrl = poster
-            val scoreStr = this@toSearchResponse.score
-            if (!scoreStr.isNullOrBlank()) {
-                this.score = Score.from10(scoreStr)
-            }
+    this.posterUrl = poster
         }
-    }
 
     // --- Details & Load ---
     override suspend fun load(url: String): LoadResponse {
