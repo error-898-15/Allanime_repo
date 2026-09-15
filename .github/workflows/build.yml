@@ -81,6 +81,11 @@ jobs:
             echo "Successfully collected icon.png"
           fi
           
+          if [ -f "blakite_icon.png" ]; then
+            cp blakite_icon.png $RUNNER_TEMP/build_artifacts/
+            echo "Successfully collected blakite_icon.png"
+          fi
+          
           echo "Files ready for publication:"
           ls -la $RUNNER_TEMP/build_artifacts/
 
