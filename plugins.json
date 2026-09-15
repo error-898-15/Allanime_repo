@@ -1,22 +1,22 @@
 [
   {
-    "name": "UchihaPlugin",
+    "name": "Blakite Anime",
     "internalName": "UchihaPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "Uchiharepo CloudStream CS3 Foundation Plugin",
+    "description": "Blakite Anime - Hindi & English Subbed/Dubbed Anime, Movies, and Series with multi-quality Rumble Cloud HLS streaming",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime"
+      "Anime",
+      "AnimeMovie",
+      "Cartoon"
     ],
-    "language": "en",
+    "language": "hi",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/UchihaPlugin.cs3",
     "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icon.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+    "fileSize": 0
   }
 ]
