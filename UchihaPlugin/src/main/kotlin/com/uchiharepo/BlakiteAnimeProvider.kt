@@ -208,7 +208,7 @@ class BlakiteAnimeProvider : MainAPI() {
                 this.backgroundPosterUrl = backdrop
                 this.plot = synopsis
                 this.year = year
-                this.score = Score.from10(ratingStr)
+                this.rating = ratingStr?.toDoubleOrNull()?.let { (it * 1000).toInt() }
                 this.tags = genres
             }
         }
@@ -264,7 +264,7 @@ class BlakiteAnimeProvider : MainAPI() {
             this.backgroundPosterUrl = backdrop
             this.plot = synopsis
             this.year = year
-            this.score = Score.from10(ratingStr)
+            this.rating = ratingStr?.toDoubleOrNull()?.let { (it * 1000).toInt() }
             this.tags = genres
         }
     }
