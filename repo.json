@@ -1,6 +1,6 @@
 {
   "name": "Uchiharepo",
-  "description": "CloudStream CS3 Extension Repository by error-898-15",
+  "description": "Uchiharepo CloudStream CS3 Plugins Repository",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/plugins.json"
