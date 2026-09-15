@@ -1,0 +1,22 @@
+[
+  {
+    "name": "UchihaPlugin",
+    "internalName": "UchihaPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "Uchiharepo CloudStream CS3 Foundation Plugin",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries",
+      "Anime"
+    ],
+    "language": "en",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/UchihaPlugin.cs3",
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icon.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  }
+]
