@@ -11,7 +11,6 @@ buildscript {
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        // Pinned JitPack commit for Cloudstream Gradle plugin from ReflexRepo reference
         classpath("com.github.recloudstream.gradle:gradle:81b1d424d")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
@@ -37,7 +36,6 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     cloudstream {
-        // Automatically injects "error-898-15/Uchiharepo" during GitHub Actions workflow run
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "error-898-15/Uchiharepo")
         authors = listOf("error-898-15")
     }
@@ -52,13 +50,13 @@ subprojects {
         }
 
         compileOptions {
-            sourceCompatibility = JavaVersion.VERSION_1_8
-            targetCompatibility = JavaVersion.VERSION_1_8
+            sourceCompatibility = JavaVersion.VERSION_11
+            targetCompatibility = JavaVersion.VERSION_11
         }
 
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_1_8) // Required for CloudStream runtime compatibility
+                jvmTarget.set(JvmTarget.JVM_11)
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
@@ -70,13 +68,11 @@ subprojects {
     }
 
     dependencies {
-        val implementation by configurations
         val cloudstream by configurations
+        val implementation by configurations
 
-        // Stubs for all CloudStream CS3 runtime classes
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        // Standard core dependencies (as used in reflex and megix)
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
