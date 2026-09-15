@@ -1,4 +1,4 @@
-import com.android.build.gradle.BaseExtension
+import com.android.build.api.dsl.LibraryExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
@@ -11,7 +11,8 @@ buildscript {
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.7.3")
-        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        // Pinned JitPack commit for Cloudstream Gradle plugin from ReflexRepo reference
+        classpath("com.github.recloudstream.gradle:gradle:81b1d424d")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
@@ -27,8 +28,8 @@ allprojects {
 fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
     extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
 
-fun Project.android(configuration: BaseExtension.() -> Unit) =
-    extensions.getByName<BaseExtension>("android").configuration()
+fun Project.android(configuration: LibraryExtension.() -> Unit) =
+    extensions.getByName<LibraryExtension>("android").configuration()
 
 subprojects {
     apply(plugin = "com.android.library")
@@ -38,15 +39,16 @@ subprojects {
     cloudstream {
         // Automatically injects "error-898-15/Uchiharepo" during GitHub Actions workflow run
         setRepo(System.getenv("GITHUB_REPOSITORY") ?: "error-898-15/Uchiharepo")
+        authors = listOf("error-898-15")
     }
 
     android {
         namespace = "com.uchiharepo"
+        compileSdk = 35
 
         defaultConfig {
             minSdk = 21
-            compileSdkVersion(35)
-            targetSdk = 35
+            testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
 
         compileOptions {
@@ -56,32 +58,34 @@ subprojects {
 
         tasks.withType<KotlinJvmCompile> {
             compilerOptions {
-                jvmTarget.set(JvmTarget.JVM_1_8) // Required by CloudStream runtime
+                jvmTarget.set(JvmTarget.JVM_1_8) // Required for CloudStream runtime compatibility
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
-                    "-Xno-receiver-assertions"
+                    "-Xno-receiver-assertions",
+                    "-Xskip-metadata-version-check"
                 )
             }
         }
     }
 
     dependencies {
-        val cloudstream by configurations
         val implementation by configurations
+        val cloudstream by configurations
 
         // Stubs for all CloudStream CS3 runtime classes
         cloudstream("com.lagradost:cloudstream3:pre-release")
 
-        // Standard core dependencies provided by CloudStream environment
+        // Standard core dependencies (as used in reflex and megix)
         implementation(kotlin("stdlib"))
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("org.jsoup:jsoup:1.18.3")
-        // Jackson capped at 2.13.1 for compatibility with older Android devices
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.1")
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.13.1")
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     }
 }
 
-task<Delete>("clean") {
+tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
