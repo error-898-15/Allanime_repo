@@ -5,7 +5,9 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.util.regex.Pattern
 
 class BlakiteAnimeProvider : MainAPI() {
@@ -34,7 +36,6 @@ class BlakiteAnimeProvider : MainAPI() {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    // JSON Data models
     data class AnimeCatalogResponse(
         @JsonProperty("success") val success: Boolean? = null,
         @JsonProperty("data") val data: CatalogData? = null
@@ -110,7 +111,7 @@ class BlakiteAnimeProvider : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val catalog = fetchCatalog() ?: return HomePageResponse(emptyList())
+        val catalog = fetchCatalog() ?: return newHomePageResponse(emptyList())
         val homeSections = ArrayList<HomePageList>()
 
         // 1. Latest Anime Series
@@ -142,7 +143,7 @@ class BlakiteAnimeProvider : MainAPI() {
             homeSections.add(HomePageList("English Dubbed & Subbed", englishList.take(25)))
         }
 
-        return HomePageResponse(homeSections)
+        return newHomePageResponse(homeSections)
     }
 
     private fun AnimeItem.toSearchResponse(): SearchResponse? {
@@ -191,7 +192,7 @@ class BlakiteAnimeProvider : MainAPI() {
         val backdrop = animeItem.images?.backdrop
         val synopsis = animeItem.tmdbData?.synopsis ?: animeItem.tmdbData?.overview
         val year = animeItem.tmdbData?.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()
-        val rating = animeItem.tmdbData?.rating?.toFloatOrNull()?.times(1000)?.toInt()
+        val ratingStr = animeItem.tmdbData?.rating
         val genres = animeItem.tmdbData?.genres
 
         if (isMovie) {
@@ -207,11 +208,12 @@ class BlakiteAnimeProvider : MainAPI() {
                 this.backgroundPosterUrl = backdrop
                 this.plot = synopsis
                 this.year = year
-                this.rating = rating
+                this.score = Score.from10(ratingStr)
                 this.tags = genres
             }
         }
 
+        // Series with seasons and episodes
         val episodes = ArrayList<Episode>()
         val seasonsMap = animeItem.seasons.orEmpty()
 
@@ -239,6 +241,7 @@ class BlakiteAnimeProvider : MainAPI() {
                 }
             }
         } else {
+            // Fallback single episode
             val passData = EpisodePassData(
                 tmdbId = animeItem.tmdbId ?: tmdbId,
                 season = 1,
@@ -261,7 +264,7 @@ class BlakiteAnimeProvider : MainAPI() {
             this.backgroundPosterUrl = backdrop
             this.plot = synopsis
             this.year = year
-            this.rating = rating
+            this.score = Score.from10(ratingStr)
             this.tags = genres
         }
     }
@@ -312,7 +315,7 @@ class BlakiteAnimeProvider : MainAPI() {
         val rangesStr = streamObj.ranges.orEmpty()
         val format = streamObj.format ?: "M3U8"
 
-        // 1. Rumble Cloud HLS Adaptive Streams
+        // 1. Parse M3U8 multi-quality ranges and invoke HLS ExtractorLinks
         if (format == "M3U8" && rangesStr.isNotBlank()) {
             val rangeLines = rangesStr.split("\n")
             val rangeRegex = Pattern.compile("^(\\d+-\\d+)\\s*\\(([^)]+)\\)")
@@ -322,36 +325,38 @@ class BlakiteAnimeProvider : MainAPI() {
                 val matcher = rangeRegex.matcher(trimmedLine)
                 if (matcher.find()) {
                     val range = matcher.group(1)
-                    val label = matcher.group(2).trim()
+                    val label = matcher.group(2).trim() // e.g. 720p, 480p
                     val code = QUALITY_CODES[label] ?: "gaa"
                     val streamUrl =
                         "$BASE_STREAM_URL$dataId.$code.tar?r_file=chunklist.m3u8&r_type=application%2Fvnd.apple.mpegurl&r_range=$range"
 
                     callback.invoke(
-                        ExtractorLink(
+                        newExtractorLink(
                             source = this.name,
                             name = "Blakite Cloud HLS ($label)",
                             url = streamUrl,
-                            referer = referer,
-                            quality = getQualityInt(label),
-                            isM3u8 = true
-                        )
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = referer
+                            this.quality = getQualityInt(label)
+                        }
                     )
                 }
             }
         }
 
-        // 2. Direct MP4 fallback stream
+        // 2. Direct MP4 fallback link
         val mp4Url = "$BASE_STREAM_URL$dataId.gaa.mp4"
         callback.invoke(
-            ExtractorLink(
+            newExtractorLink(
                 source = this.name,
                 name = "Blakite Direct MP4 (720p)",
                 url = mp4Url,
-                referer = referer,
-                quality = Qualities.P720.value,
-                isM3u8 = false
-            )
+                type = ExtractorLinkType.VIDEO
+            ) {
+                this.referer = referer
+                this.quality = Qualities.P720.value
+            }
         )
 
         return true
