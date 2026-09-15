@@ -6,5 +6,5 @@ cloudstream {
     status = 1
     tvTypes = listOf("Anime", "Movie", "Cartoon")
     language = "hi"
-    iconUrl = "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icon.png"
+    iconUrl = "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/icon.png"
 }
