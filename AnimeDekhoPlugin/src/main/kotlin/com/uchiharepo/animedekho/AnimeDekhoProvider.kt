@@ -158,47 +158,75 @@ class AnimeDekhoProvider : MainAPI() {
         ).document
 
         val serverElements = document.select("a[data-src], ul.bx-lst li a[data-src], .server-list li a[data-src]")
-        var totalLinksLoaded = 0
+        val decodedServers = ArrayList<Pair<String, String>>()
 
         for (srv in serverElements) {
             val serverName = srv.selectFirst(".num, span")?.text()?.trim() ?: "Server"
             val b64 = srv.attr("data-src").trim()
             if (b64.isBlank()) continue
 
-            val decodedUrl = try {
-                val decodedBytes = Base64.decode(b64, Base64.DEFAULT)
-                String(decodedBytes, StandardCharsets.UTF_8).trim()
-            } catch (e: Exception) {
-                null
-            } ?: continue
-
             try {
-                // 1. NeoCDN (1080p, 720p, 360p)
-                if (decodedUrl.contains("/aaa/myth/play.php")) {
-                    if (extractNeoCdn(decodedUrl, serverName, data, callback)) totalLinksLoaded++
-                }
-                // 2. VidStream Direct Embed
-                else if (decodedUrl.contains("/embed/")) {
-                    if (extractVidStreamOrEmbed(decodedUrl, serverName, data, subtitleCallback, callback)) totalLinksLoaded++
-                }
-                // 3. AnimeDekho TR Redirect Servers (Blakite, VidSrc, Vidmoly, Omega, Abyss)
-                else if (decodedUrl.contains("trdekho=") || decodedUrl.contains("animedekho.app/?tr")) {
-                    if (extractTrServer(decodedUrl, serverName, data, subtitleCallback, callback)) totalLinksLoaded++
-                }
-                // 4. Default LoadExtractor
-                else {
-                    loadExtractor(decodedUrl, data, subtitleCallback, callback)
-                    totalLinksLoaded++
+                val decodedBytes = Base64.decode(b64, Base64.DEFAULT)
+                val rawUrl = String(decodedBytes, StandardCharsets.UTF_8).trim()
+                if (rawUrl.isNotEmpty()) {
+                    decodedServers.add(serverName to rawUrl)
                 }
             } catch (e: Exception) {
-                // Ignore and proceed
+                // Skip invalid b64
             }
         }
 
-        return totalLinksLoaded > 0 || serverElements.isNotEmpty()
+        var linksCount = 0
+
+        // =========================================================================
+        // ⚡ PHASE 1: LOAD THE FIRST 2 INSTANT HIGH-SPEED SERVERS FIRST
+        // =========================================================================
+        
+        // 1. NeoCDN Server (High-Speed Direct Streams)
+        val neoCdnItem = decodedServers.firstOrNull { it.second.contains("/aaa/myth/play.php") }
+        if (neoCdnItem != null) {
+            if (extractNeoCdn(neoCdnItem.second, neoCdnItem.first, data, callback)) {
+                linksCount++
+            }
+        }
+
+        // 2. MultiAudio Rumble Cloud HLS (Extract via TMDB ID from embed)
+        val embedItem = decodedServers.firstOrNull { it.second.contains("/embed/") }
+        if (embedItem != null) {
+            if (extractBlakiteDirect(embedItem.second, embedItem.first, data, callback)) {
+                linksCount++
+            }
+        }
+
+        // =========================================================================
+        // 🚀 PHASE 2: AFTER THE FIRST 2 SERVERS, LOAD ALL REMAINING SERVERS
+        // =========================================================================
+        for ((serverName, decodedUrl) in decodedServers) {
+            // Avoid duplicate processing of the first 2 servers
+            if (decodedUrl == neoCdnItem?.second || decodedUrl == embedItem?.second) continue
+
+            try {
+                if (decodedUrl.contains("trdekho=") || decodedUrl.contains("animedekho.app/?tr")) {
+                    if (extractTrServer(decodedUrl, serverName, data, subtitleCallback, callback)) {
+                        linksCount++
+                    }
+                } else if (decodedUrl.contains("/embed/")) {
+                    if (extractVidStreamOrEmbed(decodedUrl, serverName, data, subtitleCallback, callback)) {
+                        linksCount++
+                    }
+                } else {
+                    loadExtractor(decodedUrl, data, subtitleCallback, callback)
+                    linksCount++
+                }
+            } catch (e: Exception) {
+                // Continue to next server without failing
+            }
+        }
+
+        return linksCount > 0 || decodedServers.isNotEmpty()
     }
 
-    // --- Server 1: NeoCDN ---
+    // --- Server 1: NeoCDN (1080p, 720p, 360p) ---
     private suspend fun extractNeoCdn(
         playUrl: String,
         serverName: String,
@@ -294,7 +322,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Server 4: VidSrc (Google Cloud 1080p, 720p, 480p) ---
+    // --- Server 4: VidSrc (Google Cloud Fast Stream - 1080p, 720p, 480p) ---
     private suspend fun extractXerverVidSrc(
         iframeSrc: String,
         serverName: String,
@@ -334,7 +362,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Server 5: Blakite / Rumble Multi-Audio HLS (5 Qualities) ---
+    // --- Server 5: MultiAudio Rumble Cloud HLS (Full 5 Qualities) ---
     private suspend fun extractBlakiteDirect(
         embedUrl: String,
         serverName: String,
