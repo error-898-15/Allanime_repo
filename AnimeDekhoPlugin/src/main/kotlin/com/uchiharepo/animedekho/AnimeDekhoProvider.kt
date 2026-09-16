@@ -4,7 +4,9 @@ import android.util.Base64
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -155,7 +157,6 @@ class AnimeDekhoProvider : MainAPI() {
             headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mainUrl/")
         ).document
 
-        // Collect all servers from the web page
         val serverElements = document.select("a[data-src], ul.bx-lst li a[data-src], .server-list li a[data-src]")
         var totalLinksLoaded = 0
 
@@ -172,7 +173,7 @@ class AnimeDekhoProvider : MainAPI() {
             } ?: continue
 
             try {
-                // 1. NeoCDN (High-Speed Multi-Resolution Direct Stream)
+                // 1. NeoCDN (1080p, 720p, 360p)
                 if (decodedUrl.contains("/aaa/myth/play.php")) {
                     if (extractNeoCdn(decodedUrl, serverName, data, callback)) totalLinksLoaded++
                 }
@@ -180,24 +181,24 @@ class AnimeDekhoProvider : MainAPI() {
                 else if (decodedUrl.contains("/embed/")) {
                     if (extractVidStreamOrEmbed(decodedUrl, serverName, data, subtitleCallback, callback)) totalLinksLoaded++
                 }
-                // 3. All AnimeDekho TR Redirect Servers (Blakite, VidSrc, Vidmoly, Omega, Abyss, etc.)
+                // 3. AnimeDekho TR Redirect Servers (Blakite, VidSrc, Vidmoly, Omega, Abyss)
                 else if (decodedUrl.contains("trdekho=") || decodedUrl.contains("animedekho.app/?tr")) {
                     if (extractTrServer(decodedUrl, serverName, data, subtitleCallback, callback)) totalLinksLoaded++
                 }
-                // 4. Third-party extractors
+                // 4. Default LoadExtractor
                 else {
                     loadExtractor(decodedUrl, data, subtitleCallback, callback)
                     totalLinksLoaded++
                 }
             } catch (e: Exception) {
-                // Continue with remaining servers
+                // Ignore and proceed
             }
         }
 
         return totalLinksLoaded > 0 || serverElements.isNotEmpty()
     }
 
-    // --- Server 1: NeoCDN (1080p, 720p, 360p) ---
+    // --- Server 1: NeoCDN ---
     private suspend fun extractNeoCdn(
         playUrl: String,
         serverName: String,
@@ -219,14 +220,15 @@ class AnimeDekhoProvider : MainAPI() {
                         val proxiedUrl = worker + URLEncoder.encode(s.url, "UTF-8")
                         val label = s.type ?: "720p"
                         callback.invoke(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = "$name - NeoCDN",
                                 name = "$name - NeoCDN ($label)",
                                 url = proxiedUrl,
-                                referer = "$mainUrl/",
-                                quality = getQualityInt(label),
-                                isM3u8 = s.url.contains(".m3u8")
-                            )
+                                type = if (s.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = "$mainUrl/"
+                                this.quality = getQualityInt(label)
+                            }
                         )
                         added = true
                     }
@@ -292,7 +294,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Server 4: VidSrc (Google Cloud Fast Stream - 1080p, 720p, 480p) ---
+    // --- Server 4: VidSrc (Google Cloud 1080p, 720p, 480p) ---
     private suspend fun extractXerverVidSrc(
         iframeSrc: String,
         serverName: String,
@@ -315,14 +317,15 @@ class AnimeDekhoProvider : MainAPI() {
             if (!instantDl.isNullOrBlank()) {
                 val qualityLabel = if (serverName.contains("480")) "480p" else if (serverName.contains("720")) "720p" else "1080p"
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - VidSrc",
                         name = "$name - $serverName (Google Cloud $qualityLabel)",
                         url = instantDl,
-                        referer = "https://mirror.xerver.xyz/",
-                        quality = getQualityInt(qualityLabel),
-                        isM3u8 = false
-                    )
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://mirror.xerver.xyz/"
+                        this.quality = getQualityInt(qualityLabel)
+                    }
                 )
                 true
             } else false
@@ -331,7 +334,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Server 5: Blakite / Rumble Multi-Audio HLS (Full 5-Quality Stream) ---
+    // --- Server 5: Blakite / Rumble Multi-Audio HLS (5 Qualities) ---
     private suspend fun extractBlakiteDirect(
         embedUrl: String,
         serverName: String,
@@ -380,14 +383,15 @@ class AnimeDekhoProvider : MainAPI() {
                             val streamUrl = "${baseDURL}${data.dataId}.${code}.tar?r_file=chunklist.m3u8&r_type=application%2Fvnd.apple.mpegurl&r_range=$range"
 
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = "$name - MultiAudio",
                                     name = "$name - MultiAudio ($label)",
                                     url = streamUrl,
-                                    referer = "https://blakiteapi.xyz/",
-                                    quality = getQualityInt(label),
-                                    isM3u8 = true
-                                )
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    this.referer = "https://blakiteapi.xyz/"
+                                    this.quality = getQualityInt(label)
+                                }
                             )
                             found = true
                         }
@@ -415,14 +419,15 @@ class AnimeDekhoProvider : MainAPI() {
 
             if (m3u8 != null) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - Vidmoly",
                         name = "$name - Vidmoly (HD)",
                         url = m3u8,
-                        referer = "https://vidmoly.biz/",
-                        quality = Qualities.P720.value,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://vidmoly.biz/"
+                        this.quality = Qualities.P720.value
+                    }
                 )
                 true
             } else {
@@ -446,14 +451,15 @@ class AnimeDekhoProvider : MainAPI() {
             val m3u8 = Regex("""(https?://[^"']+\.m3u8[^"']*)""").find(html)?.groupValues?.get(1)
             if (m3u8 != null) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - Omega",
                         name = "$name - Omega (Fast HLS)",
                         url = m3u8,
-                        referer = "https://emturbovid.com/",
-                        quality = Qualities.P720.value,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://emturbovid.com/"
+                        this.quality = Qualities.P720.value
+                    }
                 )
                 true
             } else false
@@ -476,14 +482,15 @@ class AnimeDekhoProvider : MainAPI() {
 
             if (videoSrc != null) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - HydraX",
                         name = "$name - HydraX (Abyss)",
                         url = videoSrc,
-                        referer = abyssUrl,
-                        quality = Qualities.P720.value,
-                        isM3u8 = videoSrc.contains(".m3u8")
-                    )
+                        type = if (videoSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = abyssUrl
+                        this.quality = Qualities.P720.value
+                    }
                 )
                 true
             } else false
