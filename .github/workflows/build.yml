@@ -52,119 +52,37 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            chmod +x gradlew
-            ./gradlew :BlakitePlugin:make :ZLivePlugin:make :FojikPlugin:make makePluginsJson --stacktrace || ./gradlew makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
-          else
-            gradle :BlakitePlugin:make :ZLivePlugin:make :FojikPlugin:make makePluginsJson --stacktrace || gradle makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
-          fi
+          chmod +x gradlew || true
+          ./gradlew make makePluginsJson --stacktrace || ./gradlew makePluginsJson --stacktrace || ./gradlew :BlakitePlugin:make :ZLivePlugin:make :FojikPlugin:make makePluginsJson --stacktrace
 
-      - name: Ensure Real Plugin Names & Valid SHA256 Hashes
+      - name: Collect Build Artifacts
         run: |
-          python3 -c "
-          import json, glob, zipfile, os, hashlib
+          echo "=== Collecting Artifacts ==="
+          mkdir -p "$RUNNER_TEMP/build_artifacts"
 
-          PLUGIN_META = {
-              'BlakitePlugin': {
-                  'name': 'Blakite Anime',
-                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
-              },
-              'ZLivePlugin': {
-                  'name': 'ZLive',
-                  'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
-              },
-              'FojikPlugin': {
-                  'name': 'Fojik',
-                  'iconUrl': 'https://fojik.site/wp-content/uploads/Untitled2.png'
-              }
-          }
+          find . -type f -name "*.cs3" -exec cp -t "$RUNNER_TEMP/build_artifacts" {} + 2>/dev/null || true
+          find . -type f -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp -t "$RUNNER_TEMP/build_artifacts" {} + 2>/dev/null || true
 
-          cs3_hashes = {}
-          for cs3_file in glob.glob('**/*.cs3', recursive=True):
-              print(f'Inspecting {cs3_file}...')
-              base = os.path.basename(cs3_file)
-              with zipfile.ZipFile(cs3_file, 'r') as zin:
-                  items = {name: zin.read(name) for name in zin.namelist()}
-              if 'manifest.json' in items:
-                  manifest = json.loads(items['manifest.json'].decode('utf-8'))
-                  for plugin_key, meta in PLUGIN_META.items():
-                      if plugin_key.lower() in base.lower() or manifest.get('internalName', '').lower() == plugin_key.lower():
-                          manifest['name'] = meta['name']
-                          if 'iconUrl' in meta:
-                              manifest['iconUrl'] = meta['iconUrl']
-                          print(f'Set name to {meta["name"]} inside {cs3_file}')
-                  items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
-                  with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
-                      for name, data in items.items():
-                          zout.writestr(name, data)
-              
-              with open(cs3_file, 'rb') as f:
-                  content = f.read()
-              h = 'sha256-' + hashlib.sha256(content).hexdigest()
-              sz = len(content)
-              cs3_hashes[base] = (h, sz)
-              print(f'{base} -> hash: {h}, size: {sz}')
-
-          for pjson in ['build/plugins.json', 'plugins.json']:
-              if os.path.exists(pjson):
-                  with open(pjson, 'r') as f:
-                      data = json.load(f)
-                  for item in data:
-                      iname = item.get('internalName', '')
-                      for plugin_key, meta in PLUGIN_META.items():
-                          if iname.lower() == plugin_key.lower() or plugin_key.lower() in item.get('url', '').lower():
-                              item['name'] = meta['name']
-                              item['iconUrl'] = meta['iconUrl']
-                      for base, (h, sz) in cs3_hashes.items():
-                          if base in item.get('url', '') or iname in base:
-                              item['fileHash'] = h
-                              item['fileSize'] = sz
-                              print(f'Synced {pjson} [{item.get("name")}] with hash {h} and size {sz}')
-                  with open(pjson, 'w') as f:
-                      json.dump(data, f, indent=2)
-                  print(f'Successfully updated {pjson}')
-          "
-
-      - name: Verify Output Artifacts
-        run: |
-          echo "=== Verifying Generated Files ==="
-          mkdir -p $RUNNER_TEMP/build_artifacts
-          
-          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
-          
           if [ -f "build/plugins.json" ]; then
-            cp build/plugins.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected build/plugins.json"
+            cp build/plugins.json "$RUNNER_TEMP/build_artifacts/plugins.json"
+            echo "Collected build/plugins.json"
           elif [ -f "plugins.json" ]; then
-            cp plugins.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected plugins.json"
+            cp plugins.json "$RUNNER_TEMP/build_artifacts/plugins.json"
+            echo "Collected plugins.json"
           fi
-          
+
           if [ -f "repo.json" ]; then
-            cp repo.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected repo.json"
-          else
-            cat << 'EOF' > $RUNNER_TEMP/build_artifacts/repo.json
-{
-  "name": "Uchiharepo",
-  "description": "Uchiha CloudStream Plugins Repository (Blakite, ZLive, Fojik)",
-  "manifestVersion": 1,
-  "pluginLists": [
-    "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/plugins.json"
-  ]
-}
-EOF
-            echo "Auto-generated repo.json matching doGior reference standards"
+            cp repo.json "$RUNNER_TEMP/build_artifacts/repo.json"
+            echo "Collected repo.json"
           fi
-          
+
           if [ -f "icon.png" ]; then
-            cp icon.png $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected icon.png"
+            cp icon.png "$RUNNER_TEMP/build_artifacts/icon.png"
+            echo "Collected icon.png"
           fi
-          
-          echo "Files ready for publication:"
-          ls -la $RUNNER_TEMP/build_artifacts/
+
+          echo "Collected files:"
+          ls -la "$RUNNER_TEMP/build_artifacts"
 
       - name: Upload Build Artifacts (Zip)
         uses: actions/upload-artifact@v4
@@ -177,11 +95,11 @@ EOF
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          
+
           git checkout -B builds
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
-          cp -r $RUNNER_TEMP/build_artifacts/* ./
-          
+          cp -r "$RUNNER_TEMP/build_artifacts"/* ./
+
           git add -A
           if git diff-index --quiet HEAD --; then
             echo "No changes to commit to builds branch."
