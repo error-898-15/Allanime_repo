@@ -1,3 +1,4 @@
 rootProject.name = "Uchiharepo"
 
-include(":UchihaPlugin")
+include(":BlakitePlugin")
+include(":ZLivePlugin")
