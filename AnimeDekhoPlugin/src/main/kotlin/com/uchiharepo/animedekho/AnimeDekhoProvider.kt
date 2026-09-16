@@ -3,7 +3,6 @@ package com.uchiharepo.animedekho
 import android.util.Base64
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
-import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
@@ -28,32 +27,26 @@ class AnimeDekhoProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "$mainUrl/home/" to "🔥 Spotlight",
-        "$mainUrl/series-hindi/page/" to "📺 Latest Series",
-        "$mainUrl/movie-hindi/page/" to "🎬 Latest Movies",
-        "$mainUrl/category/action/page/" to "⚔️ Action",
-        "$mainUrl/category/adventure/page/" to "🗺️ Adventure",
-        "$mainUrl/category/comedy/page/" to "😂 Comedy",
-        "$mainUrl/category/fantasy/page/" to "✨ Fantasy",
-        "$mainUrl/category/drama/page/" to "🎭 Drama",
-        "$mainUrl/category/animation/page/" to "🎨 Animation",
-        "$mainUrl/category/hindi-dub/page/" to "🇮🇳 Hindi Dubbed",
-        "$mainUrl/category/tamil/page/" to "🌴 Tamil",
-        "$mainUrl/category/telugu/page/" to "🏛️ Telugu",
-        "$mainUrl/category/crunchyroll/page/" to "🟠 Crunchyroll",
-        "$mainUrl/category/cartoon/page/" to "🧸 Cartoons"
+        "$mainUrl/series-hindi/page/" to "Latest Series",
+        "$mainUrl/movie-hindi/page/" to "Latest Movies",
+        "$mainUrl/category/action/page/" to "Action",
+        "$mainUrl/category/adventure/page/" to "Adventure",
+        "$mainUrl/category/comedy/page/" to "Comedy",
+        "$mainUrl/category/fantasy/page/" to "Fantasy",
+        "$mainUrl/category/drama/page/" to "Drama",
+        "$mainUrl/category/animation/page/" to "Animation",
+        "$mainUrl/category/hindi-dub/page/" to "Hindi Dubbed",
+        "$mainUrl/category/tamil/page/" to "Tamil",
+        "$mainUrl/category/telugu/page/" to "Telugu",
+        "$mainUrl/category/crunchyroll/page/" to "Crunchyroll",
+        "$mainUrl/category/cartoon/page/" to "Cartoons"
     )
 
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val url = if (request.data.contains("/home/")) {
-            if (page > 1) return newHomePageResponse(emptyList())
-            request.data
-        } else {
-            "${request.data}$page/"
-        }
+        val url = "${request.data}$page/"
 
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val home = document.select("article.post, div.post, .film_list-wrap .flw-item").mapNotNull {
@@ -375,9 +368,14 @@ class AnimeDekhoProvider : MainAPI() {
             }
 
             if (apiUrl != null) {
+                // Crucial: Must use Referer https://blakiteapi.xyz/ to avoid 403 Forbidden
                 val apiJson = app.get(
                     apiUrl,
-                    headers = mapOf("Referer" to embedUrl, "User-Agent" to USER_AGENT)
+                    headers = mapOf(
+                        "Referer" to "https://blakiteapi.xyz/",
+                        "User-Agent" to USER_AGENT,
+                        "Accept" to "application/json, text/plain, */*"
+                    )
                 ).text
 
                 val apiRes = parseJson<BlakiteApiResponse>(apiJson)
