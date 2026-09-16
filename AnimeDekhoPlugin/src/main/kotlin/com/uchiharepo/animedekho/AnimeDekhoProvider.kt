@@ -2,12 +2,16 @@ package com.uchiharepo.animedekho
 
 import android.util.Base64
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.regex.Pattern
 
 class AnimeDekhoProvider : MainAPI() {
     override var mainUrl = "https://animedekho.app"
@@ -67,7 +71,7 @@ class AnimeDekhoProvider : MainAPI() {
                 this.posterUrl = posterUrl
             }
         } else {
-            newAnimeSearchResponse(title, href, TvType.Anime) {
+            newTvSeriesSearchResponse(title, href, TvType.Anime) {
                 this.posterUrl = posterUrl
             }
         }
@@ -83,7 +87,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
 
         val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "AnimeDekho"
@@ -105,7 +109,7 @@ class AnimeDekhoProvider : MainAPI() {
                 this.year = year
             }
         } else {
-            val episodes = mutableListOf<Episode>()
+            val episodes = ArrayList<Episode>()
             val epElements = document.select("a[href*='/epi/']")
 
             epElements.forEach { element ->
@@ -118,12 +122,12 @@ class AnimeDekhoProvider : MainAPI() {
                     val epNum = match?.groupValues?.get(2)?.toIntOrNull() ?: 1
 
                     episodes.add(
-                        Episode(
-                            data = epHref,
-                            name = "Episode $epNum (Season $season)",
-                            season = season,
-                            episode = epNum
-                        )
+                        newEpisode(epHref) {
+                            this.name = "Season $season Episode $epNum"
+                            this.season = season
+                            this.episode = epNum
+                            this.posterUrl = poster
+                        }
                     )
                 }
             }
@@ -132,12 +136,11 @@ class AnimeDekhoProvider : MainAPI() {
                 compareBy<Episode> { it.season ?: 1 }.thenBy { it.episode ?: 1 }
             )
 
-            return newAnimeLoadResponse(title, url, TvType.Anime) {
+            return newTvSeriesLoadResponse(title, url, TvType.Anime, sortedEpisodes) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.tags = tags
                 this.year = year
-                addEpisodes(DubStatus.Dubbed, sortedEpisodes)
             }
         }
     }
@@ -148,7 +151,11 @@ class AnimeDekhoProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl)).document
+        val document = app.get(
+            data,
+            headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mainUrl/")
+        ).document
+
         val serverElements = document.select("ul.bx-lst li a[data-src], .server-list li a[data-src]")
 
         for (srv in serverElements) {
@@ -181,7 +188,7 @@ class AnimeDekhoProvider : MainAPI() {
                     loadExtractor(decodedUrl, data, subtitleCallback, callback)
                 }
             } catch (e: Exception) {
-                // Keep trying all other servers
+                // Ignore and continue with next server
             }
         }
 
@@ -196,11 +203,19 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(playUrl, referer = referer, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val html = app.get(
+                playUrl,
+                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
+            ).text
+
             val fetchId = Regex("""/aaa/myth/fetch\.php\?id=([a-zA-Z0-9_/-]+)""").find(html)?.groupValues?.get(1)
             if (fetchId != null) {
                 val apiUrl = "https://animedekho.app/aaa/myth/fetch.php?id=$fetchId"
-                val json = app.get(apiUrl, referer = playUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
+                val json = app.get(
+                    apiUrl,
+                    headers = mapOf("Referer" to playUrl, "User-Agent" to USER_AGENT)
+                ).text
+
                 val resObj = parseJson<NeoCdnResponse>(json)
                 val worker = "https://jolly-salad-69ad.zenhashi.workers.dev/?url="
 
@@ -209,14 +224,15 @@ class AnimeDekhoProvider : MainAPI() {
                         val proxiedUrl = worker + URLEncoder.encode(s.url, "UTF-8")
                         val label = s.type ?: "720p"
                         callback.invoke(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = "$name - NeoCDN",
-                                name = "$name - NeoCDN ($label - ${s.size ?: ""})",
+                                name = "$name - NeoCDN ($label)",
                                 url = proxiedUrl,
-                                referer = mainUrl,
-                                quality = getQualityFromName(label),
-                                isM3u8 = s.url.contains(".m3u8")
-                            )
+                                type = if (s.url.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = "$mainUrl/"
+                                this.quality = getQualityInt(label)
+                            }
                         )
                     }
                 }
@@ -235,7 +251,11 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(embedUrl, referer = referer, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val html = app.get(
+                embedUrl,
+                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
+            ).text
+
             val iframeSrc = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(html)?.groupValues?.get(1)
             if (iframeSrc != null) {
                 if (iframeSrc.contains("blakiteapi.xyz")) {
@@ -258,27 +278,22 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(trUrl, referer = referer, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val html = app.get(
+                trUrl,
+                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
+            ).text
+
             val iframeSrc = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(html)?.groupValues?.get(1) ?: return
 
-            // Case A: VidSrc (mirror.xerver.xyz)
             if (iframeSrc.contains("mirror.xerver.xyz")) {
                 extractXerverVidSrc(iframeSrc, serverName, callback)
-            }
-            // Case B: MyCloud (Blakite API)
-            else if (iframeSrc.contains("blakiteapi.xyz")) {
+            } else if (iframeSrc.contains("blakiteapi.xyz")) {
                 extractBlakiteDirect(iframeSrc, serverName, trUrl, callback)
-            }
-            // Case C: SRuby (StreamRuby)
-            else if (iframeSrc.contains("rubystm.com") || iframeSrc.contains("streamruby.com")) {
+            } else if (iframeSrc.contains("rubystm.com") || iframeSrc.contains("streamruby.com")) {
                 extractStreamRuby(iframeSrc, serverName, trUrl, subtitleCallback, callback)
-            }
-            // Case D: Vidmoly
-            else if (iframeSrc.contains("vidmoly.biz") || iframeSrc.contains("vidmoly.to")) {
+            } else if (iframeSrc.contains("vidmoly.biz") || iframeSrc.contains("vidmoly.to")) {
                 extractVidmolyDirect(iframeSrc, serverName, trUrl, subtitleCallback, callback)
-            }
-            // Case E: Standard CloudStream Extractors (Omega, VidCloud, MirrorBot, HydraX, etc.)
-            else {
+            } else {
                 loadExtractor(iframeSrc, trUrl, subtitleCallback, callback)
             }
         } catch (e: Exception) {
@@ -297,22 +312,26 @@ class AnimeDekhoProvider : MainAPI() {
             val apiUrl = "https://mirror.xerver.xyz/get/play.php?url=${URLEncoder.encode(encMatch, "UTF-8")}&fetch=1"
             val jsonText = app.get(
                 apiUrl,
-                referer = iframeSrc,
-                headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "application/json")
+                headers = mapOf(
+                    "Referer" to iframeSrc,
+                    "User-Agent" to USER_AGENT,
+                    "Accept" to "application/json"
+                )
             ).text
 
             val res = parseJson<XerverResponse>(jsonText)
             val instantDl = res.results?.instant_dl?.url
             if (!instantDl.isNullOrBlank()) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - $serverName",
-                        name = "$name - $serverName (Google Cloud Fast Stream)",
+                        name = "$name - $serverName (Google Cloud Fast)",
                         url = instantDl,
-                        referer = "https://mirror.xerver.xyz/",
-                        quality = Qualities.P720.value,
-                        isM3u8 = false
-                    )
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://mirror.xerver.xyz/"
+                        this.quality = Qualities.P720.value
+                    }
                 )
             }
         } catch (e: Exception) {
@@ -328,7 +347,11 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val response = app.get(embedUrl, referer = referer, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val response = app.get(
+                embedUrl,
+                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
+            ).text
+
             val idMatch = Regex("""['"]id['"]\s*:\s*['"]([^'"]+)['"]""").find(response)
             val tmdbMatch = Regex("""['"]tmdbId['"]\s*:\s*['"]?(\d+)['"]?""").find(response)
 
@@ -339,8 +362,13 @@ class AnimeDekhoProvider : MainAPI() {
             } else null
 
             if (apiUrl != null) {
-                val apiRes = app.get(apiUrl, referer = embedUrl).parsedSafe<BlakiteApiResponse>()
-                val data = apiRes?.data
+                val apiJson = app.get(
+                    apiUrl,
+                    headers = mapOf("Referer" to embedUrl, "User-Agent" to USER_AGENT)
+                ).text
+
+                val apiRes = parseJson<BlakiteApiResponse>(apiJson)
+                val data = apiRes.data
                 if (data?.dataId != null && data.ranges != null) {
                     val baseDURL = "https://hugh.cdn.rumble.cloud/video/"
                     val qualityCodes = listOf("oaa", "baa", "caa", "gaa", "haa")
@@ -357,14 +385,15 @@ class AnimeDekhoProvider : MainAPI() {
                             val streamUrl = "${baseDURL}${data.dataId}.${code}.tar?r_file=chunklist.m3u8&r_type=application%2Fvnd.apple.mpegurl&r_range=$range"
 
                             callback.invoke(
-                                ExtractorLink(
+                                newExtractorLink(
                                     source = "$name - $serverName",
                                     name = "$name ($label - Multi-Audio)",
                                     url = streamUrl,
-                                    referer = "https://blakiteapi.xyz/",
-                                    quality = getQualityFromName(label),
-                                    isM3u8 = true
-                                )
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    this.referer = "https://blakiteapi.xyz/"
+                                    this.quality = getQualityInt(label)
+                                }
                             )
                         }
                     }
@@ -391,23 +420,27 @@ class AnimeDekhoProvider : MainAPI() {
                     "op" to "embed",
                     "file_code" to code,
                     "auto" to "1",
-                    "referer" to mainUrl
+                    "referer" to "$mainUrl/"
                 ),
-                referer = rubyUrl,
-                headers = mapOf("User-Agent" to USER_AGENT)
+                headers = mapOf(
+                    "Referer" to rubyUrl,
+                    "User-Agent" to USER_AGENT,
+                    "Content-Type" to "application/x-www-form-urlencoded"
+                )
             ).text
 
             val masterM3u8 = Regex("""file:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""").find(postRes)?.groupValues?.get(1)
             if (masterM3u8 != null) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - $serverName",
                         name = "$name - $serverName (HLS)",
                         url = masterM3u8,
-                        referer = "https://rubystm.com/",
-                        quality = Qualities.P720.value,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://rubystm.com/"
+                        this.quality = Qualities.P720.value
+                    }
                 )
             } else {
                 loadExtractor(rubyUrl, referer, subtitleCallback, callback)
@@ -426,24 +459,40 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(vidmolyUrl, referer = referer, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val html = app.get(
+                vidmolyUrl,
+                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
+            ).text
+
             val m3u8 = Regex("""file:\s*['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(html)?.groupValues?.get(1)
             if (m3u8 != null) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "$name - $serverName",
                         name = "$name - $serverName (Vidmoly HD)",
                         url = m3u8,
-                        referer = "https://vidmoly.biz/",
-                        quality = Qualities.P720.value,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://vidmoly.biz/"
+                        this.quality = Qualities.P720.value
+                    }
                 )
             } else {
                 loadExtractor(vidmolyUrl, referer, subtitleCallback, callback)
             }
         } catch (e: Exception) {
             loadExtractor(vidmolyUrl, referer, subtitleCallback, callback)
+        }
+    }
+
+    private fun getQualityInt(quality: String): Int {
+        return when {
+            quality.contains("1080") -> Qualities.P1080.value
+            quality.contains("720") -> Qualities.P720.value
+            quality.contains("480") -> Qualities.P480.value
+            quality.contains("360") -> Qualities.P360.value
+            quality.contains("240") -> Qualities.P240.value
+            else -> Qualities.Unknown.value
         }
     }
 
