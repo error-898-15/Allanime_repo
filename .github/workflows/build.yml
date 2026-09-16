@@ -54,12 +54,12 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
+            ./gradlew make makePluginsJson --stacktrace || ./gradlew make --stacktrace
           else
-            gradle :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
+            gradle make makePluginsJson --stacktrace || gradle make --stacktrace
           fi
 
-      - name: Ensure Real Plugin Names, Official Logos & Valid SHA256 Hashes
+      - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
@@ -81,7 +81,6 @@ jobs:
 
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
-              print(f'Inspecting {cs3_file}...')
               base = os.path.basename(cs3_file)
               with zipfile.ZipFile(cs3_file, 'r') as zin:
                   items = {name: zin.read(name) for name in zin.namelist()}
@@ -92,7 +91,6 @@ jobs:
                           manifest['name'] = meta['name']
                           if 'iconUrl' in meta:
                               manifest['iconUrl'] = meta['iconUrl']
-                          print(f'Set name to {meta[\"name\"]} and official icon inside {cs3_file}')
                   items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
                   with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                       for name, data in items.items():
@@ -103,7 +101,6 @@ jobs:
               h = 'sha256-' + hashlib.sha256(content).hexdigest()
               sz = len(content)
               cs3_hashes[base] = (h, sz)
-              print(f'{base} -> hash: {h}, size: {sz}')
 
           for pjson in ['build/plugins.json', 'plugins.json']:
               if os.path.exists(pjson):
@@ -119,39 +116,24 @@ jobs:
                           if base in item.get('url', '') or iname in base:
                               item['fileHash'] = h
                               item['fileSize'] = sz
-                              print(f'Synced {pjson} [{item.get(\"name\")}] with icon {item.get(\"iconUrl\")} and hash {h}')
                   with open(pjson, 'w') as f:
                       json.dump(data, f, indent=2)
-                  print(f'Successfully updated {pjson}')
           "
 
       - name: Verify Output Artifacts
         run: |
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
-          
           find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
           find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
-          
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected build/plugins.json"
           elif [ -f "plugins.json" ]; then
             cp plugins.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected plugins.json"
           fi
-          
           if [ -f "repo.json" ]; then
             cp repo.json $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected repo.json"
           fi
-          
-          if [ -f "icon.png" ]; then
-            cp icon.png $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected icon.png"
-          fi
-          
-          echo "Files ready for publication:"
           ls -la $RUNNER_TEMP/build_artifacts/
 
       - name: Upload Build Artifacts (Zip)
@@ -165,14 +147,12 @@ jobs:
         run: |
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
-          
           git checkout -B builds
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
           cp -r $RUNNER_TEMP/build_artifacts/* ./
-          
           git add -A
           if git diff-index --quiet HEAD --; then
-            echo "No changes to commit to builds branch."
+            echo "No changes to commit."
           else
             git commit -m "Automated build: ${{ github.sha }}"
             git push origin builds --force
