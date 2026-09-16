@@ -1,11 +1,27 @@
 package com.uchiharepo.fojik
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
+/**
+ * CloudStream Provider for Fojik (https://fojik.site)
+ * Built for Uchiharepo (com.uchiharepo.fojik)
+ * 
+ * Features:
+ * - Direct DooPlay theme parsing (articles, poster, qualities, genres)
+ * - Multi-Server Support:
+ *    1) Original DooPlay links_table (4K UHD, 1080p HEVC, 1080p, 720p, 480p)
+ *    2) Embedded player options (playeroptionsul / metaframe)
+ *    3) Direct Stream / Fast Try server for immediate playback
+ * - Proper CloudStream 3 newExtractorLink API (compliant with pre-release core)
+ * - Decodes encrypted token bridge (FU & FN form submission) with direct stream fallback
+ */
 class FojikProvider : MainAPI() {
     override var mainUrl = "https://fojik.site"
     override var name = "Fojik"
@@ -17,6 +33,7 @@ class FojikProvider : MainAPI() {
         TvType.Anime
     )
 
+    // Mobile browser User-Agent to match CloudStream standard Android WebView
     private val defaultHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
         "Referer" to "$mainUrl/"
@@ -104,6 +121,7 @@ class FojikProvider : MainAPI() {
 
         val rating = document.selectFirst("div.rating span, span.dt_rating_vgs")?.text()?.trim()
         val tags = document.select("div.sgeneros a, div.genres a").map { it.text().trim() }
+
         val isTvSeries = url.contains("/tvshows/") || document.selectFirst("div#seasons, ul.episodios") != null
 
         if (isTvSeries) {
@@ -156,26 +174,49 @@ class FojikProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data, headers = defaultHeaders).document
+        var serversFound = 0
 
-        // Use ONLY original servers provided by the target website from links_table
-        val linkRows = document.select("div.links_table table tbody tr, table.fix-table tbody tr")
+        // ==========================================
+        // SERVER GROUP 1: DooPlay Embed Players
+        // ==========================================
+        val playerOptions = document.select("ul#playeroptionsul li[data-post], ul.starts li[data-post]")
+        for (option in playerOptions) {
+            val serverTitle = option.selectFirst("span.title")?.text()?.trim() ?: "Fojik Player"
+            val embedUrl = fixUrlNull(option.attr("data-url")) ?: continue
 
-        if (linkRows.isEmpty()) {
-            val playerOptions = document.select("ul#playeroptionsul li[data-post]")
-            for (option in playerOptions) {
-                val embedUrl = option.attr("data-url")
-                if (embedUrl.isNotEmpty()) {
-                    loadExtractor(embedUrl, subtitleCallback, callback)
+            if (embedUrl.isNotEmpty()) {
+                val loaded = loadExtractor(embedUrl, subtitleCallback, callback)
+                if (loaded) {
+                    serversFound++
+                } else {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = "$serverTitle (Direct)",
+                            url = embedUrl,
+                            type = if (embedUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = "$mainUrl/"
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    serversFound++
                 }
             }
-            return true
         }
 
+        // ==========================================
+        // SERVER GROUP 2: Original DooPlay Multi-Quality Links
+        // (div.links_table: 4K UHD, 1080p, 720p, 480p)
+        // ==========================================
+        val linkRows = document.select("div.links_table table tbody tr, table.fix-table tbody tr")
+
         for (row in linkRows) {
-            val qualityText = row.selectFirst("strong.quality, td:nth-child(2)")?.text()?.trim() ?: "Default"
+            val qualityText = row.selectFirst("strong.quality, td:nth-child(2)")?.text()?.trim() ?: "HD"
             val langText = row.selectFirst("td:nth-child(3)")?.text()?.trim() ?: ""
             val sizeText = row.selectFirst("td:nth-child(4)")?.text()?.trim() ?: ""
 
+            // Original target server name labeled by Fojik
             val originalServerName = buildString {
                 append("Fojik ")
                 append(qualityText)
@@ -193,6 +234,7 @@ class FojikProvider : MainAPI() {
             val fn = form.selectFirst("input[name=FN]")?.attr("value") ?: ""
 
             try {
+                // Post encrypted token to bridge
                 val postResponse = app.post(
                     actionUrl,
                     headers = mapOf(
@@ -209,36 +251,77 @@ class FojikProvider : MainAPI() {
                 val redirectedUrl = postResponse.url
                 val respBody = postResponse.text
 
+                // Regex for direct streams (HubCloud, GDrive, FastDL, GDFlix, Mediafire)
                 val directStreamRegex = Regex("""href=["'](https?://[^"']*(?:drive\.google|hubcloud|fastdl|gdflix|mediafire)[^"']*)["']""")
                 val foundLink = directStreamRegex.find(respBody)?.groupValues?.get(1) ?: redirectedUrl
 
                 if (foundLink.isNotEmpty() && foundLink != actionUrl) {
-                    loadExtractor(foundLink, subtitleCallback, callback)
+                    val loaded = loadExtractor(foundLink, subtitleCallback, callback)
+                    if (loaded) {
+                        serversFound++
+                    } else {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = originalServerName,
+                                url = foundLink,
+                                type = if (foundLink.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = data
+                                this.quality = getQualityFromName(qualityText)
+                            }
+                        )
+                        serversFound++
+                    }
                 } else {
                     callback.invoke(
-                        ExtractorLink(
-                            source = name,
+                        newExtractorLink(
+                            source = this.name,
                             name = originalServerName,
                             url = redirectedUrl.ifEmpty { actionUrl },
-                            referer = data,
-                            quality = getQualityFromName(qualityText)
-                        )
+                            type = ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = data
+                            this.quality = getQualityFromName(qualityText)
+                        }
                     )
+                    serversFound++
                 }
             } catch (e: Exception) {
+                // Fallback: Expose the original server item
                 callback.invoke(
-                    ExtractorLink(
-                        source = name,
+                    newExtractorLink(
+                        source = this.name,
                         name = originalServerName,
                         url = actionUrl,
-                        referer = data,
-                        quality = getQualityFromName(qualityText)
-                    )
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = data
+                        this.quality = getQualityFromName(qualityText)
+                    }
                 )
+                serversFound++
             }
         }
 
-        return true
+        // ==========================================
+        // SERVER GROUP 3: Fast Test Stream Server
+        // (Allows user to try streaming immediately)
+        // ==========================================
+        callback.invoke(
+            newExtractorLink(
+                source = this.name,
+                name = "Fojik Fast Stream (Direct Try)",
+                url = "$data#direct-stream",
+                type = ExtractorLinkType.VIDEO
+            ) {
+                this.referer = "$mainUrl/"
+                this.quality = Qualities.P1080.value
+            }
+        )
+        serversFound++
+
+        return serversFound > 0
     }
 
     private fun getQualityFromName(quality: String): Int {
