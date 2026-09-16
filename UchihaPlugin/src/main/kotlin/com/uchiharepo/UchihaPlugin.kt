@@ -7,7 +7,10 @@ import com.lagradost.cloudstream3.plugins.Plugin
 @CloudstreamPlugin
 class UchihaPlugin : Plugin() {
     override fun load(context: Context) {
-        // Register Blakite Anime provider (Hindi/English Subbed & Dubbed Anime with Rumble Cloud HLS streaming)
+        // Register Blakite Anime provider (Hindi/English Subbed & Dubbed Anime)
         registerMainAPI(BlakiteAnimeProvider())
+
+        // Register ZLive provider (Live Sports, Events, and TV Channels)
+        registerMainAPI(ZLiveProvider())
     }
 }
