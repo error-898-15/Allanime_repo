@@ -67,7 +67,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          ./gradlew make makePluginsJson --stacktrace || ./gradlew :UchihaPlugin:make :HiAnimePlugin:make --stacktrace
+          ./gradlew make makePluginsJson --stacktrace || ./gradlew :UchihaPlugin:make --stacktrace
 
       - name: Ensure Real Plugin Name & Valid SHA256 Hashes
         run: |
