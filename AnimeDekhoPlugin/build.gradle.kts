@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "AnimeDekho - Watch Hindi & Multi-Audio Anime & Movies with original high speed servers"
@@ -6,7 +6,7 @@ cloudstream {
     status = 1
     tvTypes = listOf("Anime", "Movie", "Cartoon")
     language = "hi"
-    iconUrl = "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937"
+    iconUrl = "https://animedekho.app/wp-content/uploads/2023/02/cropped-favicon-270x270.png"
 }
 
 android {
