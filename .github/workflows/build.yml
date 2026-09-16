@@ -128,8 +128,8 @@ jobs:
         run: |
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
-          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
+          find . -name "*.cs3" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} +
+          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} + || true
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
           elif [ -f "plugins.json" ]; then
