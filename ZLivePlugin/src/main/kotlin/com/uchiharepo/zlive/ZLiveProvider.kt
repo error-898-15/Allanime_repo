@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
@@ -35,8 +36,8 @@ class ZLiveProvider : MainAPI() {
         private const val SECRET = "1lNAwCy_A2PnbE5sIpWwjyDI9WeN--37BqUuLOD2aI4"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        private const val DEFAULT_POSTER =
-            "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/icon.png"
+        private const val DEFAULT_ZLIVE_ICON =
+            "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937"
     }
 
     data class ZLiveSource(
@@ -159,14 +160,21 @@ class ZLiveProvider : MainAPI() {
         }
     }
 
+    private fun getChannelPoster(channel: ZLiveChannel): String {
+        val flag = channel.flag?.trim()
+        if (!flag.isNullOrBlank() && flag.length == 2 && !flag.contains("\uD83C")) {
+            return "https://flagcdn.com/w160/${flag.lowercase()}.png"
+        }
+        val name = channel.name ?: "Live"
+        val cleanName = URLEncoder.encode(name, "UTF-8")
+        val color = (channel.accent ?: "#8288fe").removePrefix("#")
+        return "https://ui-avatars.com/api/?name=${cleanName}&background=${color}&color=fff&size=256&bold=true&length=3"
+    }
+
     private fun ZLiveChannel.toSearchResponse(): SearchResponse? {
         val channelId = id ?: return null
         val title = name ?: "Live Channel"
-        val poster = if (!flag.isNullOrBlank()) {
-            "https://flagcdn.com/w160/${flag.lowercase()}.png"
-        } else {
-            DEFAULT_POSTER
-        }
+        val poster = getChannelPoster(this)
         return newMovieSearchResponse(
             name = title,
             url = "$mainUrl/channel/$channelId",
@@ -179,7 +187,7 @@ class ZLiveProvider : MainAPI() {
     private fun ZLiveStreamEvent.toSearchResponse(): SearchResponse? {
         val streamId = id ?: return null
         val title = name ?: "Live Event"
-        val poster = thumbnail?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTER
+        val poster = thumbnail?.takeIf { it.isNotBlank() } ?: DEFAULT_ZLIVE_ICON
         return newMovieSearchResponse(
             name = title,
             url = "$mainUrl/stream/$streamId",
@@ -192,48 +200,72 @@ class ZLiveProvider : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val homeSections = ArrayList<HomePageList>()
 
-        // 1. Live Sports & Events
+        // 1. Live Sports & Major Events
         val liveEvents = fetchStreams().mapNotNull { it.toSearchResponse() }
         if (liveEvents.isNotEmpty()) {
-            homeSections.add(HomePageList("Live Sports & Events", liveEvents))
+            homeSections.add(HomePageList("🔴 Live Sports & Events", liveEvents))
         }
 
-        // 2. All channels
+        // 2. All channels categorized
         val allChannels = fetchChannels()
         if (allChannels.isNotEmpty()) {
-            // Live Sports Channels
+            // Sports & Combat Channels
             val sportsChannels = allChannels.filter {
-                it.sport?.contains("sport", ignoreCase = true) == true ||
-                it.sport?.contains("wwe", ignoreCase = true) == true ||
-                it.name?.contains("sport", ignoreCase = true) == true ||
-                it.name?.contains("espn", ignoreCase = true) == true ||
-                it.name?.contains("dazn", ignoreCase = true) == true
+                val n = it.name?.lowercase() ?: ""
+                val s = it.sport?.lowercase() ?: ""
+                val id = it.id?.lowercase() ?: ""
+                s.contains("sport") || s.contains("wwe") || s.contains("ufc") ||
+                n.contains("sport") || n.contains("espn") || n.contains("dazn") ||
+                n.contains("wwe") || n.contains("bein") || n.contains("fight") ||
+                n.contains("racing") || n.contains("football") || n.contains("cricket") ||
+                n.contains("tnt") || n.contains("sky") || n.contains("ten") ||
+                id.contains("sport") || id.contains("dazn") || id.contains("espn")
             }.mapNotNull { it.toSearchResponse() }
             if (sportsChannels.isNotEmpty()) {
-                homeSections.add(HomePageList("Sports & Combat TV", sportsChannels))
+                homeSections.add(HomePageList("⚽ Sports & Combat TV", sportsChannels))
             }
 
-            // USA / Major Networks
-            val usaChannels = allChannels.filter {
-                it.region?.contains("usa", ignoreCase = true) == true ||
-                it.flag?.equals("us", ignoreCase = true) == true
+            // Entertainment, Movies & Series
+            val entChannels = allChannels.filter {
+                val n = it.name?.lowercase() ?: ""
+                val s = it.sport?.lowercase() ?: ""
+                n.contains("hbo") || n.contains("cinema") || n.contains("movie") ||
+                n.contains("amc") || n.contains("showtime") || n.contains("starz") ||
+                n.contains("fx") || n.contains("tnt") || n.contains("usa") ||
+                n.contains("bravo") || n.contains("e!") || n.contains("comedy") ||
+                n.contains("paramount") || n.contains("drama") || s.contains("general")
             }.mapNotNull { it.toSearchResponse() }
-            if (usaChannels.isNotEmpty()) {
-                homeSections.add(HomePageList("USA Live TV", usaChannels))
+            if (entChannels.isNotEmpty()) {
+                homeSections.add(HomePageList("🎬 Movies & Entertainment", entChannels))
             }
 
-            // UK & International
-            val intlChannels = allChannels.filter {
-                it.region?.contains("uk", ignoreCase = true) == true ||
-                it.flag?.equals("gb", ignoreCase = true) == true
+            // News & Documentaries
+            val newsChannels = allChannels.filter {
+                val n = it.name?.lowercase() ?: ""
+                n.contains("news") || n.contains("cnn") || n.contains("bbc") ||
+                n.contains("msnbc") || n.contains("fox news") || n.contains("cnbc") ||
+                n.contains("discovery") || n.contains("nat geo") || n.contains("history") ||
+                n.contains("animal") || n.contains("weather")
             }.mapNotNull { it.toSearchResponse() }
-            if (intlChannels.isNotEmpty()) {
-                homeSections.add(HomePageList("UK & International TV", intlChannels))
+            if (newsChannels.isNotEmpty()) {
+                homeSections.add(HomePageList("📰 News & Knowledge", newsChannels))
             }
 
-            // Complete Channels Index
+            // Kids & Animation
+            val kidsChannels = allChannels.filter {
+                val n = it.name?.lowercase() ?: ""
+                val s = it.sport?.lowercase() ?: ""
+                s.contains("kids") || s.contains("cartoon") || n.contains("disney") ||
+                n.contains("nick") || n.contains("cartoon") || n.contains("boomerang") ||
+                n.contains("adult swim") || n.contains("anime")
+            }.mapNotNull { it.toSearchResponse() }
+            if (kidsChannels.isNotEmpty()) {
+                homeSections.add(HomePageList("🧸 Kids & Animation", kidsChannels))
+            }
+
+            // Complete Channels Catalog
             val allMapped = allChannels.mapNotNull { it.toSearchResponse() }
-            homeSections.add(HomePageList("All Channels", allMapped))
+            homeSections.add(HomePageList("📺 All ZLive Channels", allMapped))
         }
 
         return newHomePageResponse(homeSections)
@@ -259,8 +291,8 @@ class ZLiveProvider : MainAPI() {
             val nameMatch = ch.name?.lowercase()?.contains(q) == true
             val sportMatch = ch.sport?.lowercase()?.contains(q) == true
             val tagMatch = ch.tagline?.lowercase()?.contains(q) == true
-            val regionMatch = ch.region?.lowercase()?.contains(q) == true
-            if (nameMatch || sportMatch || tagMatch || regionMatch) {
+            val idMatch = ch.id?.lowercase()?.contains(q) == true
+            if (nameMatch || sportMatch || tagMatch || idMatch) {
                 ch.toSearchResponse()?.let { results.add(it) }
             }
         }
@@ -278,7 +310,7 @@ class ZLiveProvider : MainAPI() {
             val stream = streams.firstOrNull { it.id == slug }
             if (stream != null) {
                 val title = stream.name ?: "Live Stream"
-                val poster = stream.thumbnail?.takeIf { it.isNotBlank() } ?: DEFAULT_POSTER
+                val poster = stream.thumbnail?.takeIf { it.isNotBlank() } ?: DEFAULT_ZLIVE_ICON
                 val sources = if (stream.source != null) listOf(stream.source) else emptyList()
                 val passData = ZLivePassData(
                     id = stream.id ?: slug,
@@ -301,11 +333,7 @@ class ZLiveProvider : MainAPI() {
         val channel = channels.firstOrNull { it.id == slug } ?: channels.firstOrNull { it.id?.contains(slug) == true }
         if (channel != null) {
             val title = channel.name ?: "Live Channel"
-            val poster = if (!channel.flag.isNullOrBlank()) {
-                "https://flagcdn.com/w160/" + channel.flag.lowercase() + ".png"
-            } else {
-                DEFAULT_POSTER
-            }
+            val poster = getChannelPoster(channel)
             val sources = channel.sources.orEmpty()
             val passData = ZLivePassData(
                 id = channel.id ?: slug,
@@ -316,8 +344,7 @@ class ZLiveProvider : MainAPI() {
             ).toJson()
 
             val qualityBadge = channel.quality ?: "HD"
-            val regionText = channel.region ?: "Global"
-            val plot = (channel.tagline ?: title) + " · " + qualityBadge + " · " + regionText
+            val plot = (channel.tagline?.takeIf { it.isNotBlank() } ?: title) + " · " + qualityBadge + " · Live TV"
 
             return newMovieLoadResponse(title, url, TvType.Live, passData) {
                 this.posterUrl = poster
@@ -334,7 +361,7 @@ class ZLiveProvider : MainAPI() {
         ).toJson()
 
         return newMovieLoadResponse(slug, url, TvType.Live, passData) {
-            this.posterUrl = DEFAULT_POSTER
+            this.posterUrl = DEFAULT_ZLIVE_ICON
             this.plot = "Live Stream ($slug)"
             this.tags = listOf("Live")
         }
@@ -360,47 +387,77 @@ class ZLiveProvider : MainAPI() {
         }
 
         val dateStr = getUtcDateString()
+        val headersMap = mapOf(
+            "User-Agent" to USER_AGENT,
+            "Referer" to "$mainUrl/",
+            "Origin" to mainUrl,
+            "Accept" to "*/*"
+        )
 
         for (src in sources) {
             val key = src.key ?: passData.id
-            val serverLabel = src.label?.takeIf { it.isNotBlank() } ?: "Live Stream"
+            val serverLabel = src.label?.takeIf { it.isNotBlank() } ?: "Artemis"
 
-            try {
-                val cleanSlug = key.removePrefix("auto-").removePrefix("evt-")
-                val ts = System.currentTimeMillis() / 1000
-                val payload = """{"slug":"$cleanSlug","ts":$ts}"""
-                val encryptedBody = encryptPayload(payload, dateStr)
+            // Build list of slug candidates (stripping trailing index like -0, -1 which causes 403 / 2004)
+            val candidates = mutableListOf<String>()
+            
+            // Candidate 1: Normalized clean ID (e.g. "sony-sports-network-2")
+            val idSlug = passData.id.removePrefix("auto-").removePrefix("evt-")
+            if (idSlug.isNotBlank()) {
+                candidates.add(idSlug)
+            }
 
-                val resText = app.post(
-                    API_RESOLVE,
-                    json = encryptedBody,
-                    headers = mapOf(
-                        "Content-Type" to "application/json",
-                        "Origin" to mainUrl,
-                        "Referer" to "$mainUrl/",
-                        "User-Agent" to USER_AGENT
-                    )
-                ).text
+            // Candidate 2: Source key stripped of auto- and trailing number (e.g. "auto-sony-sports-network-2-0" -> "sony-sports-network-2")
+            val cleanKey = key.removePrefix("auto-").removePrefix("evt-").replace(Regex("-\\d+$"), "")
+            if (cleanKey.isNotBlank() && !candidates.contains(cleanKey)) {
+                candidates.add(cleanKey)
+            }
 
-                val resolveRes = parseJson<ZLiveResolveResponse>(resText)
-                val streamUrl = resolveRes.location?.trim()
+            // Candidate 3: Raw key (for hex tokens like "9d5dbfd5433c0c04")
+            val rawKey = key.removePrefix("auto-").removePrefix("evt-")
+            if (rawKey.isNotBlank() && !candidates.contains(rawKey)) {
+                candidates.add(rawKey)
+            }
 
-                if (!streamUrl.isNullOrBlank() && streamUrl.startsWith("http")) {
-                    callback.invoke(
-                        newExtractorLink(
-                            source = serverLabel,
-                            name = "${this.name} - $serverLabel",
-                            url = streamUrl,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = "$mainUrl/"
-                            this.quality = Qualities.P1080.value
-                        }
-                    )
-                    linksFound = true
+            for (targetSlug in candidates) {
+                try {
+                    val ts = System.currentTimeMillis() / 1000
+                    val payload = """{"slug":"$targetSlug","ts":$ts}"""
+                    val encryptedBody = encryptPayload(payload, dateStr)
+
+                    val resText = app.post(
+                        API_RESOLVE,
+                        json = encryptedBody,
+                        headers = mapOf(
+                            "Content-Type" to "application/json",
+                            "Origin" to mainUrl,
+                            "Referer" to "$mainUrl/",
+                            "User-Agent" to USER_AGENT
+                        )
+                    ).text
+
+                    val resolveRes = parseJson<ZLiveResolveResponse>(resText)
+                    val streamUrl = resolveRes.location?.trim()
+
+                    if (!streamUrl.isNullOrBlank() && streamUrl.startsWith("http")) {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = serverLabel,
+                                name = "${this.name} - $serverLabel",
+                                url = streamUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.referer = "$mainUrl/"
+                                this.headers = headersMap
+                                this.quality = Qualities.P1080.value
+                            }
+                        )
+                        linksFound = true
+                        break // Found valid stream for this source
+                    }
+                } catch (e: Exception) {
+                    // Try next candidate
                 }
-            } catch (e: Exception) {
-                // Continue with other sources
             }
         }
 
