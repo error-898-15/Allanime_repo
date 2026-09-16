@@ -47,12 +47,10 @@ class AnimeDekhoProvider : MainAPI() {
         request: MainPageRequest
     ): HomePageResponse {
         val url = "${request.data}$page/"
-
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val home = document.select("article.post, div.post, .film_list-wrap .flw-item").mapNotNull {
             it.toSearchResult()
         }
-
         return newHomePageResponse(request.name, home)
     }
 
@@ -175,35 +173,35 @@ class AnimeDekhoProvider : MainAPI() {
             } ?: continue
 
             try {
-                // 1. NeoCDN Server (High-Speed Multi-Resolution MP4)
+                // 1. NeoCDN Server (Fast Multi-Quality MP4)
                 if (decodedUrl.contains("/aaa/myth/play.php")) {
                     extractNeoCdn(decodedUrl, serverName, data, callback)
                     linksFound = true
                 }
-                // 2. VidStream / Direct Embeds
+                // 2. VidStream Direct Embed
                 else if (decodedUrl.contains("/embed/")) {
                     extractVidStreamOrEmbed(decodedUrl, serverName, data, subtitleCallback, callback)
                     linksFound = true
                 }
-                // 3. AnimeDekho TR Redirect Servers (Blakite, VidSrc, SRuby, Vidmoly, etc.)
+                // 3. AnimeDekho TR Redirect Servers (Blakite, VidSrc, HydraX, Vidmoly, Omega, MirrorBot, SRuby)
                 else if (decodedUrl.contains("trdekho=") || decodedUrl.contains("animedekho.app/?tr")) {
                     extractTrServer(decodedUrl, serverName, data, subtitleCallback, callback)
                     linksFound = true
                 }
-                // 4. Any direct third party host
+                // 4. Fallback direct host
                 else {
                     loadExtractor(decodedUrl, data, subtitleCallback, callback)
                     linksFound = true
                 }
             } catch (e: Exception) {
-                // Continue with next server
+                // Continue with remaining servers
             }
         }
 
         return linksFound
     }
 
-    // --- Extractor 1: NeoCDN ---
+    // --- Server 1: NeoCDN ---
     private suspend fun extractNeoCdn(
         playUrl: String,
         serverName: String,
@@ -211,19 +209,11 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(
-                playUrl,
-                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
-            ).text
-
+            val html = app.get(playUrl, headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)).text
             val fetchId = Regex("""/aaa/myth/fetch\.php\?id=([a-zA-Z0-9_\/-]+)""").find(html)?.groupValues?.get(1)
             if (fetchId != null) {
                 val apiUrl = "https://animedekho.app/aaa/myth/fetch.php?id=$fetchId"
-                val json = app.get(
-                    apiUrl,
-                    headers = mapOf("Referer" to playUrl, "User-Agent" to USER_AGENT)
-                ).text
-
+                val json = app.get(apiUrl, headers = mapOf("Referer" to playUrl, "User-Agent" to USER_AGENT)).text
                 val resObj = parseJson<NeoCdnResponse>(json)
                 val worker = "https://jolly-salad-69ad.zenhashi.workers.dev/?url="
 
@@ -250,7 +240,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Extractor 2: VidStream & Embeds ---
+    // --- Server 2: VidStream & Embeds ---
     private suspend fun extractVidStreamOrEmbed(
         embedUrl: String,
         serverName: String,
@@ -259,11 +249,7 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(
-                embedUrl,
-                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
-            ).text
-
+            val html = app.get(embedUrl, headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)).text
             val iframeSrc = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(html)?.groupValues?.get(1)
             if (iframeSrc != null) {
                 val fullIframe = if (iframeSrc.startsWith("//")) "https:$iframeSrc" else iframeSrc
@@ -278,7 +264,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Extractor 3: TR Server Router ---
+    // --- Server 3: All TR Server Handlers ---
     private suspend fun extractTrServer(
         trUrl: String,
         serverName: String,
@@ -287,29 +273,24 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(
-                trUrl,
-                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
-            ).text
-
+            val html = app.get(trUrl, headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)).text
             val iframeSrc = Regex("""<iframe[^>]+src=["']([^"']+)["']""").find(html)?.groupValues?.get(1) ?: return
             val fullIframe = if (iframeSrc.startsWith("//")) "https:$iframeSrc" else iframeSrc
 
-            if (fullIframe.contains("mirror.xerver.xyz")) {
-                extractXerverVidSrc(fullIframe, serverName, callback)
-            } else if (fullIframe.contains("blakiteapi.xyz")) {
-                extractBlakiteDirect(fullIframe, serverName, trUrl, callback)
-            } else if (fullIframe.contains("vidmoly.biz") || fullIframe.contains("vidmoly.to")) {
-                extractVidmolyDirect(fullIframe, serverName, trUrl, subtitleCallback, callback)
-            } else {
-                loadExtractor(fullIframe, trUrl, subtitleCallback, callback)
+            when {
+                fullIframe.contains("mirror.xerver.xyz") -> extractXerverVidSrc(fullIframe, serverName, callback)
+                fullIframe.contains("blakiteapi.xyz") -> extractBlakiteDirect(fullIframe, serverName, trUrl, callback)
+                fullIframe.contains("vidmoly.biz") || fullIframe.contains("vidmoly.to") -> extractVidmolyDirect(fullIframe, serverName, trUrl, subtitleCallback, callback)
+                fullIframe.contains("emturbovid.com") -> extractOmegaDirect(fullIframe, serverName, trUrl, callback)
+                fullIframe.contains("abyssplayer.com") || fullIframe.contains("short.ink") -> extractAbyssDirect(fullIframe, serverName, trUrl, callback)
+                else -> loadExtractor(fullIframe, trUrl, subtitleCallback, callback)
             }
         } catch (e: Exception) {
             // Ignore
         }
     }
 
-    // --- Sub-Extractor: VidSrc (mirror.xerver.xyz) Google Cloud ---
+    // --- Server 4: VidSrc (Google Cloud 1080p/720p/480p) ---
     private suspend fun extractXerverVidSrc(
         iframeSrc: String,
         serverName: String,
@@ -321,7 +302,7 @@ class AnimeDekhoProvider : MainAPI() {
             val jsonText = app.get(
                 apiUrl,
                 headers = mapOf(
-                    "Referer" to iframeSrc,
+                    "Referer" to "https://mirror.xerver.xyz/get/play.php",
                     "User-Agent" to USER_AGENT,
                     "Accept" to "application/json"
                 )
@@ -330,15 +311,16 @@ class AnimeDekhoProvider : MainAPI() {
             val res = parseJson<XerverResponse>(jsonText)
             val instantDl = res.results?.instant_dl?.url
             if (!instantDl.isNullOrBlank()) {
+                val qualityLabel = if (serverName.contains("480")) "480p" else if (serverName.contains("720")) "720p" else "1080p"
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - $serverName",
-                        name = "$name - $serverName (Google Cloud Fast)",
+                        source = "$name - VidSrc",
+                        name = "$name - $serverName (Google Cloud $qualityLabel)",
                         url = instantDl,
                         type = ExtractorLinkType.VIDEO
                     ) {
                         this.referer = "https://mirror.xerver.xyz/"
-                        this.quality = Qualities.P720.value
+                        this.quality = getQualityInt(qualityLabel)
                     }
                 )
             }
@@ -347,7 +329,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Sub-Extractor: Blakite / Rumble Multi-Quality HLS ---
+    // --- Server 5: Blakite / Rumble Multi-Audio HLS ---
     private suspend fun extractBlakiteDirect(
         embedUrl: String,
         serverName: String,
@@ -368,7 +350,6 @@ class AnimeDekhoProvider : MainAPI() {
             }
 
             if (apiUrl != null) {
-                // Crucial: Must use Referer https://blakiteapi.xyz/ to avoid 403 Forbidden
                 val apiJson = app.get(
                     apiUrl,
                     headers = mapOf(
@@ -415,7 +396,7 @@ class AnimeDekhoProvider : MainAPI() {
         }
     }
 
-    // --- Sub-Extractor: Vidmoly ---
+    // --- Server 6: Vidmoly ---
     private suspend fun extractVidmolyDirect(
         vidmolyUrl: String,
         serverName: String,
@@ -424,11 +405,7 @@ class AnimeDekhoProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val html = app.get(
-                vidmolyUrl,
-                headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)
-            ).text
-
+            val html = app.get(vidmolyUrl, headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)).text
             val m3u8 = Regex("""file\s*:\s*['"]([^'"]+\.m3u8[^'"]*)['"]""").find(html)?.groupValues?.get(1)
                 ?: Regex("""['"](https?://[^'"]+\.m3u8[^'"]*)['"]""").find(html)?.groupValues?.get(1)
 
@@ -450,6 +427,64 @@ class AnimeDekhoProvider : MainAPI() {
             }
         } catch (e: Exception) {
             loadExtractor(vidmolyUrl, referer, subtitleCallback, callback)
+        }
+    }
+
+    // --- Server 7: Omega (Emturbovid) ---
+    private suspend fun extractOmegaDirect(
+        omegaUrl: String,
+        serverName: String,
+        referer: String,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        try {
+            val html = app.get(omegaUrl, headers = mapOf("Referer" to referer, "User-Agent" to USER_AGENT)).text
+            val m3u8 = Regex("""(https?://[^"']+\.m3u8[^"']*)""").find(html)?.groupValues?.get(1)
+            if (m3u8 != null) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = "$name - Omega",
+                        name = "$name - Omega (Fast HLS)",
+                        url = m3u8,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://emturbovid.com/"
+                        this.quality = Qualities.P720.value
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    // --- Server 8: HydraX / Abyss Player ---
+    private suspend fun extractAbyssDirect(
+        abyssUrl: String,
+        serverName: String,
+        referer: String,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        try {
+            val html = app.get(abyssUrl, headers = mapOf("Referer" to "https://animedekho.app/", "User-Agent" to USER_AGENT)).text
+            val videoSrc = Regex("""source\s*src=["']([^"']+)["']""").find(html)?.groupValues?.get(1)
+                ?: Regex("""file:\s*["']([^"']+)["']""").find(html)?.groupValues?.get(1)
+
+            if (videoSrc != null) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = "$name - HydraX",
+                        name = "$name - HydraX (Abyss)",
+                        url = videoSrc,
+                        type = if (videoSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = abyssUrl
+                        this.quality = Qualities.P720.value
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            // Ignore
         }
     }
 
