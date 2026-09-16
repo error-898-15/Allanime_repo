@@ -20,6 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -63,7 +64,6 @@ jobs:
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
-
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -71,12 +71,10 @@ jobs:
               },
               'ZLivePlugin': {
                   'name': 'ZLive',
-                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/icon.png'
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
               }
           }
-
           cs3_hashes = {}
-
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               print(f'Inspecting {cs3_file}...')
               base = os.path.basename(cs3_file)
@@ -94,7 +92,7 @@ jobs:
                   with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                       for name, data in items.items():
                           zout.writestr(name, data)
-
+              
               with open(cs3_file, 'rb') as f:
                   content = f.read()
               h = 'sha256-' + hashlib.sha256(content).hexdigest()
