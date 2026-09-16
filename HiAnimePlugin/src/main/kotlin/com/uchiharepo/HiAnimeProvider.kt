@@ -2,24 +2,7 @@ package com.uchiharepo
 
 import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.lagradost.cloudstream3.Episode
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.LoadResponse.Companion.addDub
-import com.lagradost.cloudstream3.LoadResponse.Companion.addSub
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.ShowStatus
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.newAnimeSearchResponse
-import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesLoadResponse
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -153,8 +136,6 @@ class HiAnimeProvider : MainAPI() {
             type = tvType
         ) {
             this.posterUrl = poster
-            this.addSub(this@toSearchResponse.totalSubbed)
-            this.addDub(this@toSearchResponse.totalDubbed)
         }
     }
 
@@ -195,7 +176,6 @@ class HiAnimeProvider : MainAPI() {
         }
 
         var episodeList = anime.episodes.orEmpty()
-        // If episodes list is empty in detail response, attempt to fetch range
         if (episodeList.isEmpty() && !anime.id.isNullOrBlank()) {
             try {
                 val epJson = app.get(
@@ -205,7 +185,7 @@ class HiAnimeProvider : MainAPI() {
                 val epResponse = parseJson<EpisodesRangeResponse>(epJson)
                 episodeList = epResponse.episodes.orEmpty()
             } catch (e: Exception) {
-                // Continue with what we have
+                // Continue with available data
             }
         }
 
@@ -230,8 +210,6 @@ class HiAnimeProvider : MainAPI() {
                 this.year = year
                 this.rating = ratingInt
                 this.tags = genres
-                this.addDub(anime.totalDubbed)
-                this.addSub(anime.totalSubbed)
             }
         }
 
@@ -284,8 +262,6 @@ class HiAnimeProvider : MainAPI() {
             this.rating = ratingInt
             this.tags = genres
             this.showStatus = showStatus
-            this.addDub(anime.totalDubbed)
-            this.addSub(anime.totalSubbed)
         }
     }
 
@@ -304,7 +280,6 @@ class HiAnimeProvider : MainAPI() {
         var subLinks = passData.sub.orEmpty()
         var dubLinks = passData.dub.orEmpty()
 
-        // Fallback: If links are missing, query the episodes range endpoint
         if (subLinks.isEmpty() && dubLinks.isEmpty() && !passData.animeId.isNullOrBlank()) {
             try {
                 val epNum = passData.episodeNumber ?: 1
@@ -409,8 +384,12 @@ class HiAnimeProvider : MainAPI() {
             val matcher = Pattern.compile("""window\.__P\s*=\s*"([^"]+)"""").matcher(embedHtml)
             if (!matcher.find()) return false
 
-            val blob = matcher.group(1)
-            val rawBytes = Base64.decode(blob, Base64.DEFAULT)
+            val blob = matcher.group(1) ?: return false
+            val rawBytes = try {
+                Base64.decode(blob, Base64.DEFAULT)
+            } catch (e: Throwable) {
+                java.util.Base64.getDecoder().decode(blob)
+            }
             val keyBytes = ZOKO_DECRYPT_KEY.toByteArray(Charsets.UTF_8)
             val decryptedBytes = ByteArray(rawBytes.size) { i ->
                 (rawBytes[i].toInt() xor keyBytes[i % keyBytes.size].toInt()).toByte()
@@ -435,8 +414,7 @@ class HiAnimeProvider : MainAPI() {
             val masterM3u8Url = zokoData.src?.trim() ?: return false
             val zokoReferer = "https://zokoanime.video/"
 
-            // 2. Fetch master playlist and emit individual qualities (1080p, 720p, 360p, etc.)
-            var qualityFound = false
+            // 2. Fetch master playlist and emit individual qualities (1080p, 720p, 480p, 360p)
             try {
                 val masterPlaylist = app.get(
                     masterM3u8Url,
@@ -477,15 +455,14 @@ class HiAnimeProvider : MainAPI() {
                                     this.quality = qualityInt
                                 }
                             )
-                            qualityFound = true
                         }
                     }
                 }
             } catch (e: Exception) {
-                // If playlist parsing fails, fallback to direct master link below
+                // Fallback to direct master link if playlist parsing encounters an error
             }
 
-            // 3. Always also provide the master HLS link (Auto quality)
+            // 3. Provide master HLS link (Auto quality)
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
