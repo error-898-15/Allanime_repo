@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,15 +54,16 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew :BlakitePlugin:make :ZLivePlugin:make makePluginsJson --stacktrace || ./gradlew makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
+            ./gradlew make makePluginsJson --stacktrace || ./gradlew :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace
           else
-            gradle :BlakitePlugin:make :ZLivePlugin:make makePluginsJson --stacktrace || gradle makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
+            gradle make makePluginsJson --stacktrace || gradle :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace
           fi
 
       - name: Ensure Real Plugin Names & Valid SHA256 Hashes
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
+
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -71,9 +71,14 @@ jobs:
               },
               'ZLivePlugin': {
                   'name': 'ZLive',
-                  'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+              },
+              'AnimeDekhoPlugin': {
+                  'name': 'AnimeDekho',
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
               }
           }
+
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               print(f'Inspecting {cs3_file}...')
