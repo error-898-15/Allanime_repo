@@ -4,9 +4,15 @@
     "internalName": "BlakitePlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "Blakite Anime - Watch Hindi & English Dubbed/Subbed Anime Online Free",
-    "authors": ["error-898-15"],
-    "tvTypes": ["Anime", "AnimeMovie", "Cartoon"],
+    "description": "Blakite Anime - Watch Hindi & English Dubbed/Subbed Anime Online Free with multi-quality Rumble Cloud HLS streaming",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "Cartoon"
+    ],
     "language": "hi",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3",
@@ -21,8 +27,12 @@
     "version": 3,
     "apiVersion": 1,
     "description": "ZLive - Watch Live Sports, Events & Worldwide TV Channels Free",
-    "authors": ["error-898-15"],
-    "tvTypes": ["Live"],
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Live"
+    ],
     "language": "en",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/ZLivePlugin.cs3",
@@ -36,9 +46,15 @@
     "internalName": "FojikPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "Fojik / MLWBD - Movies and Web Series in 480p, 720p, 1080p, 4K UHD with Multi-Server Streaming",
-    "authors": ["error-898-15"],
-    "tvTypes": ["Movie", "TvSeries", "Anime"],
+    "description": "Fojik / MLWBD - Watch & Download Hindi, Dual Audio, Bengali, Bollywood & Hollywood Movies and Web Series in 480p, 720p, 1080p and 4K UHD",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries",
+      "Anime"
+    ],
     "language": "bn",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/FojikPlugin.cs3",
