@@ -76,6 +76,10 @@ jobs:
               'AnimeDekhoPlugin': {
                   'name': 'AnimeDekho',
                   'iconUrl': 'https://animedekho.app/wp-content/uploads/2023/02/cropped-favicon-270x270.png'
+              },
+              'AnimeSaltPlugin': {
+                  'name': 'AnimeSalt',
+                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
               }
           }
 
@@ -124,8 +128,8 @@ jobs:
         run: |
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
-          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
+          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
+          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
           elif [ -f "plugins.json" ]; then
