@@ -37,7 +37,7 @@ class ZLiveProvider : MainAPI() {
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         private const val DEFAULT_ZLIVE_ICON =
-            "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937"
+            "https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2"
     }
 
     data class ZLiveSource(
@@ -67,7 +67,8 @@ class ZLiveProvider : MainAPI() {
         @JsonProperty("startTime") val startTime: String? = null,
         @JsonProperty("live") val live: Boolean? = true,
         @JsonProperty("order") val order: Int? = 0,
-        @JsonProperty("source") val source: ZLiveSource? = null
+        @JsonProperty("source") val source: ZLiveSource? = null,
+        @JsonProperty("sources") val sources: List<ZLiveSource>? = null
     )
 
     data class ZLivePassData(
@@ -163,12 +164,12 @@ class ZLiveProvider : MainAPI() {
     private fun getChannelPoster(channel: ZLiveChannel): String {
         val flag = channel.flag?.trim()
         if (!flag.isNullOrBlank() && flag.length == 2 && !flag.contains("\uD83C")) {
-            return "https://flagcdn.com/w160/${flag.lowercase()}.png"
+            return "https://flagcdn.com/w320/${flag.lowercase()}.png"
         }
         val name = channel.name ?: "Live"
         val cleanName = URLEncoder.encode(name, "UTF-8")
         val color = (channel.accent ?: "#8288fe").removePrefix("#")
-        return "https://ui-avatars.com/api/?name=${cleanName}&background=${color}&color=fff&size=256&bold=true&length=3"
+        return "https://ui-avatars.com/api/?name=${cleanName}&background=${color}&color=fff&size=512&bold=true&length=2&font-size=0.35"
     }
 
     private fun ZLiveChannel.toSearchResponse(): SearchResponse? {
@@ -311,11 +312,14 @@ class ZLiveProvider : MainAPI() {
             if (stream != null) {
                 val title = stream.name ?: "Live Stream"
                 val poster = stream.thumbnail?.takeIf { it.isNotBlank() } ?: DEFAULT_ZLIVE_ICON
-                val sources = if (stream.source != null) listOf(stream.source) else emptyList()
+                val sourcesList = mutableListOf<ZLiveSource>()
+                if (stream.source != null) sourcesList.add(stream.source)
+                stream.sources?.let { sourcesList.addAll(it) }
+
                 val passData = ZLivePassData(
                     id = stream.id ?: slug,
                     name = title,
-                    sources = sources,
+                    sources = sourcesList,
                     poster = poster,
                     tagline = stream.type
                 ).toJson()
@@ -398,25 +402,24 @@ class ZLiveProvider : MainAPI() {
             val key = src.key ?: passData.id
             val serverLabel = src.label?.takeIf { it.isNotBlank() } ?: "Artemis"
 
-            // Build list of slug candidates (stripping trailing index like -0, -1 which causes 403 / 2004)
             val candidates = mutableListOf<String>()
-            
-            // Candidate 1: Normalized clean ID (e.g. "sony-sports-network-2")
-            val idSlug = passData.id.removePrefix("auto-").removePrefix("evt-")
-            if (idSlug.isNotBlank()) {
-                candidates.add(idSlug)
+
+            if (key.isNotBlank()) {
+                candidates.add(key)
             }
 
-            // Candidate 2: Source key stripped of auto- and trailing number (e.g. "auto-sony-sports-network-2-0" -> "sony-sports-network-2")
             val cleanKey = key.removePrefix("auto-").removePrefix("evt-").replace(Regex("-\\d+$"), "")
             if (cleanKey.isNotBlank() && !candidates.contains(cleanKey)) {
                 candidates.add(cleanKey)
             }
 
-            // Candidate 3: Raw key (for hex tokens like "9d5dbfd5433c0c04")
-            val rawKey = key.removePrefix("auto-").removePrefix("evt-")
-            if (rawKey.isNotBlank() && !candidates.contains(rawKey)) {
-                candidates.add(rawKey)
+            val idSlug = passData.id.removePrefix("auto-").removePrefix("evt-").replace(Regex("-\\d+$"), "")
+            if (idSlug.isNotBlank() && !candidates.contains(idSlug)) {
+                candidates.add(idSlug)
+            }
+
+            if (passData.id.isNotBlank() && !candidates.contains(passData.id)) {
+                candidates.add(passData.id)
             }
 
             for (targetSlug in candidates) {
@@ -453,7 +456,7 @@ class ZLiveProvider : MainAPI() {
                             }
                         )
                         linksFound = true
-                        break // Found valid stream for this source
+                        break
                     }
                 } catch (e: Exception) {
                     // Try next candidate
