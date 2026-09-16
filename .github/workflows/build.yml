@@ -54,9 +54,9 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew make makePluginsJson --stacktrace || (./gradlew :BlakitePlugin:make --stacktrace && ./gradlew :ZLivePlugin:make --stacktrace)
+            ./gradlew make makePluginsJson --stacktrace || (./gradlew :BlakitePlugin:make --stacktrace && ./gradlew :ZLivePlugin:make --stacktrace && ./gradlew makePluginsJson --stacktrace)
           else
-            gradle make makePluginsJson --stacktrace || (gradle :BlakitePlugin:make --stacktrace && gradle :ZLivePlugin:make --stacktrace)
+            gradle make makePluginsJson --stacktrace || (gradle :BlakitePlugin:make --stacktrace && gradle :ZLivePlugin:make --stacktrace && gradle makePluginsJson --stacktrace)
           fi
 
       - name: Ensure Real Plugin Names & Valid SHA256 Hashes
@@ -76,6 +76,7 @@ jobs:
           }
 
           cs3_hashes = {}
+
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               print(f'Inspecting {cs3_file}...')
               base = os.path.basename(cs3_file)
@@ -145,11 +146,6 @@ jobs:
           if [ -f "icon.png" ]; then
             cp icon.png $RUNNER_TEMP/build_artifacts/
             echo "Successfully collected icon.png"
-          fi
-          
-          if [ -f "blakite_icon.png" ]; then
-            cp blakite_icon.png $RUNNER_TEMP/build_artifacts/
-            echo "Successfully collected blakite_icon.png"
           fi
           
           echo "Files ready for publication:"
