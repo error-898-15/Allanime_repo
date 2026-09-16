@@ -1,4 +1,4 @@
-package com.uchiharepo.ZLive
+package com.uchiharepo.zlive
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
