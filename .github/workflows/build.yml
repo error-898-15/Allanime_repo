@@ -1,4 +1,5 @@
 name: Build Plugins
+
 concurrency:
   group: "build-${{ github.ref }}"
   cancel-in-progress: true
@@ -19,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -43,55 +43,48 @@ jobs:
         with:
           gradle-version: "8.12"
 
-      - name: Setup Gradle CLI & Wrapper
-        run: |
-          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Installing standalone Gradle 8.12 binary..."
-            curl -sSL "https://services.gradle.org/distributions/gradle-8.12-bin.zip" -o /tmp/gradle-8.12-bin.zip
-            sudo unzip -q -o /tmp/gradle-8.12-bin.zip -d /opt
-            sudo ln -sf /opt/gradle-8.12/bin/gradle /usr/local/bin/gradle
-            gradle -v
-            gradle wrapper --gradle-version 8.12
-            chmod +x gradlew
-          else
-            chmod +x gradlew
-          fi
-
       - name: Normalize Manifests & Prepare Environment
         run: |
-          # Remove any legacy package attribute from AndroidManifest.xml files to avoid AGP namespace conflict
           find . -name "AndroidManifest.xml" -exec sed -i 's/package="[^"]*"//g' {} +
-          echo "Manifests sanitized."
+          echo "Environment ready."
 
       - name: Build Plugins & Manifests
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          ./gradlew make makePluginsJson --stacktrace || ./gradlew :UchihaPlugin:make --stacktrace
+          if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            chmod +x gradlew
+            ./gradlew make makePluginsJson --stacktrace || (./gradlew :BlakitePlugin:make --stacktrace && ./gradlew :ZLivePlugin:make --stacktrace)
+          else
+            gradle make makePluginsJson --stacktrace || (gradle :BlakitePlugin:make --stacktrace && gradle :ZLivePlugin:make --stacktrace)
+          fi
 
-      - name: Ensure Real Plugin Name & Valid SHA256 Hashes
+      - name: Ensure Real Plugin Names & Valid SHA256 Hashes
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
 
           PLUGIN_META = {
-              'UchihaPlugin': {
-                  'name': 'Uchiha Providers (Blakite & ZLive)',
+              'BlakitePlugin': {
+                  'name': 'Blakite Anime',
                   'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+              },
+              'ZLivePlugin': {
+                  'name': 'ZLive',
+                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/icon.png'
               }
           }
 
-          # 1. Update manifest.json inside any generated .cs3 files and recalculate hashes
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
-              print(f'Checking {cs3_file}...')
+              print(f'Inspecting {cs3_file}...')
               base = os.path.basename(cs3_file)
               with zipfile.ZipFile(cs3_file, 'r') as zin:
                   items = {name: zin.read(name) for name in zin.namelist()}
               if 'manifest.json' in items:
                   manifest = json.loads(items['manifest.json'].decode('utf-8'))
                   for plugin_key, meta in PLUGIN_META.items():
-                      if plugin_key in base or manifest.get('internalName') == plugin_key:
+                      if plugin_key.lower() in base.lower() or manifest.get('internalName', '').lower() == plugin_key.lower():
                           manifest['name'] = meta['name']
                           if 'iconUrl' in meta:
                               manifest['iconUrl'] = meta['iconUrl']
@@ -100,8 +93,7 @@ jobs:
                   with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                       for name, data in items.items():
                           zout.writestr(name, data)
-              
-              # Calculate exact new hash and size
+
               with open(cs3_file, 'rb') as f:
                   content = f.read()
               h = 'sha256-' + hashlib.sha256(content).hexdigest()
@@ -109,7 +101,6 @@ jobs:
               cs3_hashes[base] = (h, sz)
               print(f'{base} -> hash: {h}, size: {sz}')
 
-          # 2. Ensure plugins.json has real name, icon, and EXACT matching hash/size
           for pjson in ['build/plugins.json', 'plugins.json']:
               if os.path.exists(pjson):
                   with open(pjson, 'r') as f:
@@ -117,7 +108,7 @@ jobs:
                   for item in data:
                       iname = item.get('internalName', '')
                       for plugin_key, meta in PLUGIN_META.items():
-                          if iname == plugin_key or plugin_key in item.get('url', ''):
+                          if iname.lower() == plugin_key.lower() or plugin_key.lower() in item.get('url', '').lower():
                               item['name'] = meta['name']
                               item['iconUrl'] = meta['iconUrl']
                       for base, (h, sz) in cs3_hashes.items():
@@ -135,9 +126,8 @@ jobs:
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
           
-          # Find and collect all generated .cs3 and .jar files
           find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
-          find . -name "*.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
+          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
           
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
@@ -177,16 +167,10 @@ jobs:
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
           
-          # Switch to or create the standalone builds branch cleanly
           git checkout -B builds
-          
-          # Clean workspace keeping git
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
-          
-          # Copy all produced artifacts to branch root
           cp -r $RUNNER_TEMP/build_artifacts/* ./
           
-          # Commit and force push to remote builds branch
           git add -A
           if git diff-index --quiet HEAD --; then
             echo "No changes to commit to builds branch."
