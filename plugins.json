@@ -1,25 +1,44 @@
 [
   {
-    "name": "Uchiha Providers (Blakite & ZLive)",
-    "internalName": "UchihaPlugin",
-    "version": 2,
+    "name": "Blakite Anime",
+    "internalName": "BlakitePlugin",
+    "version": 1,
     "apiVersion": 1,
-    "description": "Blakite Anime & ZLive - Watch Anime and Live Sports & TV Channels",
+    "description": "Blakite Anime - Watch Hindi & English Dubbed/Subbed Anime Online Free with multi-quality Rumble Cloud HLS streaming",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Cartoon",
+      "Cartoon"
+    ],
+    "language": "hi",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "ZLive",
+    "internalName": "ZLivePlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "ZLive - Watch Live Sports, Events & Worldwide TV Channels Free",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
       "Live"
     ],
     "language": "en",
     "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/UchihaPlugin.cs3",
-    "fileHash": "sha256-c0c108d673b4f92de11002c4f31d82232680b2af7c11c2c1be9459d5e5893c86",
-    "fileSize": 27419,
-    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/ZLivePlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/icon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
-]
+    ]
