@@ -54,9 +54,9 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew make makePluginsJson --stacktrace || ./gradlew :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace
+            ./gradlew :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
           else
-            gradle make makePluginsJson --stacktrace || gradle :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace
+            gradle :BlakitePlugin:make :ZLivePlugin:make :AnimeDekhoPlugin:make makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
           fi
 
       - name: Ensure Real Plugin Names & Valid SHA256 Hashes
