@@ -42,3 +42,22 @@
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
 ]
+{
+  "name": "Fojik",
+  "internalName": "FojikPlugin",
+  "version": 1,
+  "apiVersion": 1,
+  "description": "Fojik / MLWBD - Watch & Download Hindi, Dual Audio, Bengali, Bollywood & Hollywood Movies and Web Series in 480p, 720p, 1080p and 4K UHD",
+  "authors": [
+    "error-898-15"
+  ],
+  "tvTypes": [
+    "Movie",
+    "TvSeries",
+    "Anime"
+  ],
+  "language": "bn",
+  "status": 1,
+  "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/FojikPlugin.cs3",
+  "iconUrl": "https://fojik.site/wp-content/uploads/Untitled2.png"
+}
