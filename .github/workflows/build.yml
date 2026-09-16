@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -55,15 +54,16 @@ jobs:
         run: |
           if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             chmod +x gradlew
-            ./gradlew :BlakitePlugin:make :ZLivePlugin:make makePluginsJson --stacktrace || ./gradlew makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
+            ./gradlew :BlakitePlugin:make :ZLivePlugin:make :FojikPlugin:make makePluginsJson --stacktrace || ./gradlew makePluginsJson --stacktrace || ./gradlew make makePluginsJson --stacktrace
           else
-            gradle :BlakitePlugin:make :ZLivePlugin:make makePluginsJson --stacktrace || gradle makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
+            gradle :BlakitePlugin:make :ZLivePlugin:make :FojikPlugin:make makePluginsJson --stacktrace || gradle makePluginsJson --stacktrace || gradle make makePluginsJson --stacktrace
           fi
 
       - name: Ensure Real Plugin Names & Valid SHA256 Hashes
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
+
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -72,8 +72,13 @@ jobs:
               'ZLivePlugin': {
                   'name': 'ZLive',
                   'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
+              },
+              'FojikPlugin': {
+                  'name': 'Fojik',
+                  'iconUrl': 'https://fojik.site/wp-content/uploads/Untitled2.png'
               }
           }
+
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               print(f'Inspecting {cs3_file}...')
@@ -87,7 +92,7 @@ jobs:
                           manifest['name'] = meta['name']
                           if 'iconUrl' in meta:
                               manifest['iconUrl'] = meta['iconUrl']
-                          print(f'Set name to {meta[\"name\"]} inside {cs3_file}')
+                          print(f'Set name to {meta["name"]} inside {cs3_file}')
                   items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
                   with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                       for name, data in items.items():
@@ -114,7 +119,7 @@ jobs:
                           if base in item.get('url', '') or iname in base:
                               item['fileHash'] = h
                               item['fileSize'] = sz
-                              print(f'Synced {pjson} [{item.get(\"name\")}] with hash {h} and size {sz}')
+                              print(f'Synced {pjson} [{item.get("name")}] with hash {h} and size {sz}')
                   with open(pjson, 'w') as f:
                       json.dump(data, f, indent=2)
                   print(f'Successfully updated {pjson}')
@@ -125,8 +130,8 @@ jobs:
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
           
-          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ \;
+          find . -name "*.cs3" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
+          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp {} $RUNNER_TEMP/build_artifacts/ ;
           
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
@@ -139,6 +144,18 @@ jobs:
           if [ -f "repo.json" ]; then
             cp repo.json $RUNNER_TEMP/build_artifacts/
             echo "Successfully collected repo.json"
+          else
+            cat << 'EOF' > $RUNNER_TEMP/build_artifacts/repo.json
+{
+  "name": "Uchiharepo",
+  "description": "Uchiha CloudStream Plugins Repository (Blakite, ZLive, Fojik)",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/plugins.json"
+  ]
+}
+EOF
+            echo "Auto-generated repo.json matching doGior reference standards"
           fi
           
           if [ -f "icon.png" ]; then
