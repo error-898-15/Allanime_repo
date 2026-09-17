@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -62,9 +61,9 @@ jobs:
 
       - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
         run: |
-          python3 - << 'EOF'
+          python3 -c "
           import json, glob, zipfile, os, hashlib
-          
+
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -81,10 +80,6 @@ jobs:
               'AnimeSaltPlugin': {
                   'name': 'AnimeSalt',
                   'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
-              },
-              'RareAnimesPlugin': {
-                  'name': 'RareAnimes',
-                  'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
               }
           }
 
@@ -127,7 +122,7 @@ jobs:
                               item['fileSize'] = sz
                   with open(pjson, 'w') as f:
                       json.dump(data, f, indent=2)
-          EOF
+          "
 
       - name: Verify Output Artifacts
         run: |
