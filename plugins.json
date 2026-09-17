@@ -24,16 +24,16 @@
   {
     "name": "ZLive",
     "internalName": "ZLivePlugin",
-    "version": 2,
+    "version": 1,
     "apiVersion": 1,
-    "description": "ZLive - Watch Live Sports, Events & Worldwide TV Channels Free",
+    "description": "ZLive - Watch Live Sports, Cricket, Football & TV Channels in High Quality",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Live"
     ],
-    "language": "en",
+    "language": "hi",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/ZLivePlugin.cs3",
     "fileHash": "",
@@ -46,15 +46,14 @@
     "internalName": "AnimeDekhoPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "AnimeDekho - Watch Hindi & Multi-Audio Anime & Movies with original high speed servers",
+    "description": "AnimeDekho - Watch Hindi, Tamil, Telugu Dubbed Anime and Cartoons",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Cartoon",
-      "Movie"
+      "Cartoon"
     ],
     "language": "hi",
     "status": 1,
@@ -89,26 +88,3 @@
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
   {
-    "name": "RareAnimes",
-    "internalName": "RareAnimesPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "RareAnimes - Watch Hindi, Tamil, Telugu & English Dubbed Anime, Cartoons & Movies with MultiQuality, StreamBeta and original high-speed servers",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "Movie"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/RareAnimesPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://www.rareanimes.mov/wp-content/uploads/2023/11/Rare-Animes-India.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  }
-    ]
