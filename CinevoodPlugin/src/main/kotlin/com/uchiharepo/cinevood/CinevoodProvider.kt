@@ -79,11 +79,7 @@ class CinevoodProvider : MainAPI() {
         } else if (clean.startsWith("/")) {
             clean = "$mainUrl$clean"
         }
-        return clean.replace("/w185/", "/w500/")
-            .replace("/w342/", "/w500/")
-            .replace("/w300/", "/w500/")
-            .replace("/w780/", "/w500/")
-            .replace(Regex("""-\d+x\d+\.(jpg|jpeg|png|webp)""", RegexOption.IGNORE_CASE), ".$1")
+        return clean.replace(Regex("""-\d+x\d+\.(jpg|jpeg|png|webp)""", RegexOption.IGNORE_CASE), ".$1")
     }
 
     private fun extractImageUrl(element: Element?): String? {
@@ -173,7 +169,7 @@ class CinevoodProvider : MainAPI() {
                 headings.mapIndexed { idx, el ->
                     val text = el.text().trim()
                     val epNum = Regex("""\d+""").find(text)?.value?.toIntOrNull() ?: (idx + 1)
-                    val season = Regex("""(?i)season\s*(\\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    val season = Regex("""(?i)season\s*(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
                     newEpisode(url) {
                         this.name = text
                         this.episode = epNum
@@ -321,7 +317,6 @@ class CinevoodProvider : MainAPI() {
         return runCatching {
             val response = app.get(
                 url,
-                allowRedirects = true,
                 headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl)
             )
             val finalUrl = response.url
