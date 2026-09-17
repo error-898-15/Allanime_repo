@@ -87,5 +87,26 @@
     "fileSize": 0,
     "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "MLWBD",
+    "internalName": "MLWBDPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "MLWBD - Watch & Download Hollywood, Bollywood, South & Dual Audio Hindi Dubbed Movies from fojik.site with original HubCloud, GDFlix & FastCloud servers",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries"
+    ],
+    "language": "bn",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/MLWBDPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
-    ]
+]
