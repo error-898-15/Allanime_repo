@@ -28,6 +28,11 @@ class AnimeSaltProvider : MainAPI() {
         TvType.TvSeries
     )
 
+    companion object {
+        const val USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+
     override val mainPage = mainPageOf(
         "$mainUrl/series/page/" to "Latest Series",
         "$mainUrl/movies/page/" to "Latest Movies",
@@ -154,7 +159,6 @@ class AnimeSaltProvider : MainAPI() {
 
                 val epName = el.selectFirst("h2.entry-title, .entry-title")?.text()?.trim()
                     ?: linkEl.text().replace(Regex("First|Latest Dub|View", RegexOption.IGNORE_CASE), "").trim()
-
                 val epThumb = extractImageUrl(el) ?: poster
 
                 // Extract season and episode numbering (e.g., 1x2, S01E02)
@@ -212,6 +216,7 @@ class AnimeSaltProvider : MainAPI() {
             val src = it.attr("src").trim()
             if (src.isNotBlank()) embedUrls.add(src)
         }
+
         document.select("[data-src]").forEach {
             val src = it.attr("data-src").trim()
             if (src.isNotBlank() && (src.contains("/video/") || src.contains("embed") || src.contains("player"))) {
@@ -230,25 +235,9 @@ class AnimeSaltProvider : MainAPI() {
                     val langList = parseJson<List<MultiLangItem>>(decodedJson)
 
                     for (item in langList) {
-                        val langName = item.language ?: "Multi"
                         val directLink = item.link ?: continue
-
                         try {
-                            loadExtractor(directLink, data, subtitleCallback) { extLink ->
-                                callback.invoke(
-                                    newExtractorLink(
-                                        source = extLink.source,
-                                        name = "${extLink.name} - $langName Audio",
-                                        url = extLink.url,
-                                        type = extLink.type
-                                    ) {
-                                        this.referer = extLink.referer
-                                        this.headers = extLink.headers
-                                        this.quality = extLink.quality
-                                    }
-                                )
-                                loadedAny = true
-                            }
+                            if (loadExtractor(directLink, data, subtitleCallback, callback)) loadedAny = true
                         } catch (e: Exception) {
                             // Continue to next language stream
                         }
@@ -256,16 +245,14 @@ class AnimeSaltProvider : MainAPI() {
                 } catch (e: Exception) {
                     // Ignore malformed player parameters
                 }
-            }
-
-            // 2. Handle FirePlayer / AS-CDN Multi-Audio HLS Master Streams
-            if (cleanUrl.contains("/video/")) {
+            } else if (cleanUrl.contains("/video/")) {
+                // 2. Handle FirePlayer / AS-CDN Multi-Audio HLS Master Streams
                 try {
                     val origin = Regex("""https?://[^/]+""").find(cleanUrl)?.value ?: continue
                     val hash = cleanUrl.substringAfterLast("/video/").substringBefore("?").substringBefore("/")
                     if (hash.isBlank()) continue
 
-                    // Visit embed page to establish session & extract subtitles
+                    // Visit embed page to establish session
                     val embedRes = app.get(
                         cleanUrl,
                         headers = mapOf(
@@ -274,16 +261,6 @@ class AnimeSaltProvider : MainAPI() {
                         )
                     )
                     val cookie = embedRes.headers["set-cookie"]?.split(";")?.firstOrNull() ?: ""
-
-                    // Extract embedded subtitle tracks (e.g. playerjsSubtitle = "[English]https://...")
-                    val subMatch = Regex("""playerjsSubtitles*=s*["'][([^]]+)]([^"']+)["']""").find(embedRes.text)
-                    if (subMatch != null) {
-                        val subLang = subMatch.groupValues[1]
-                        val subUrl = subMatch.groupValues[2]
-                        if (subUrl.startsWith("http")) {
-                            subtitleCallback.invoke(SubtitleFile(subLang, subUrl))
-                        }
-                    }
 
                     // Call getVideo endpoint to obtain legitimate HLS master stream
                     val getVideoUrl = "$origin/player/index.php?data=$hash&do=getVideo"
@@ -340,7 +317,7 @@ class AnimeSaltProvider : MainAPI() {
                             " [Multi-Audio]"
                         }
 
-                        // CRITICAL: Always emit the Master M3U8 directly so ExoPlayer enables the Audio Track switcher menu
+                        // Emit the Master M3U8 directly so ExoPlayer enables the Audio Track switcher menu
                         callback.invoke(
                             newExtractorLink(
                                 source = this.name,
@@ -358,12 +335,13 @@ class AnimeSaltProvider : MainAPI() {
                         )
                         loadedAny = true
 
-                        // Also generate resolution sub-streams (1080p, 720p, 480p) for slower connections
+                        // Also generate resolution sub-streams for slower connections
                         try {
                             M3u8Helper.generateM3u8(
                                 source = this.name,
                                 streamUrl = streamUrl,
                                 referer = "$origin/",
+                                quality = Qualities.Unknown.value,
                                 headers = mapOf(
                                     "Referer" to "$origin/",
                                     "User-Agent" to USER_AGENT
@@ -382,8 +360,7 @@ class AnimeSaltProvider : MainAPI() {
                 }
             } else {
                 try {
-                    loadExtractor(cleanUrl, data, subtitleCallback, callback)
-                    loadedAny = true
+                    if (loadExtractor(cleanUrl, data, subtitleCallback, callback)) loadedAny = true
                 } catch (e: Exception) {
                     // Ignore unsupported extractors
                 }
@@ -404,4 +381,4 @@ class AnimeSaltProvider : MainAPI() {
         @JsonProperty("securedLink") val securedLink: String? = null,
         @JsonProperty("videoImage") val videoImage: String? = null
     )
-                                               }
+}
