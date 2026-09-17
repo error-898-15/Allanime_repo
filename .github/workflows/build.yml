@@ -80,6 +80,10 @@ jobs:
               'AnimeSaltPlugin': {
                   'name': 'AnimeSalt',
                   'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
+              },
+              'MLWBDPlugin': {
+                  'name': 'MLWBD',
+                  'iconUrl': 'https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png'
               }
           }
 
