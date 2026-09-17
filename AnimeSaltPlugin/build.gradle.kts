@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "AnimeSalt - Watch Hindi & Multi-Audio Anime & Movies with Original High-Speed FirePlayer CDN"
