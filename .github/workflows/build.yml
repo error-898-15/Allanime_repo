@@ -20,6 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -63,7 +64,6 @@ jobs:
         run: |
           python3 -c "
           import json, glob, zipfile, os, hashlib
-
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -84,9 +84,12 @@ jobs:
               'MLWBDPlugin': {
                   'name': 'MLWBD',
                   'iconUrl': 'https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png'
+              },
+              'CinevoodPlugin': {
+                  'name': 'CineVood',
+                  'iconUrl': 'https://cinevood.net/wp-content/uploads/2020/07/favicon2.png'
               }
           }
-
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               base = os.path.basename(cs3_file)
