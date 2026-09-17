@@ -87,5 +87,28 @@
     "fileSize": 0,
     "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "RareAnimes",
+    "internalName": "RareAnimesPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "RareAnimes - Watch Hindi, Tamil, Telugu & English Dubbed Anime, Cartoons & Movies with MultiQuality, StreamBeta and original high-speed servers",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "Cartoon",
+      "Movie"
+    ],
+    "language": "hi",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/RareAnimesPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://www.rareanimes.mov/wp-content/uploads/2023/11/Rare-Animes-India.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
