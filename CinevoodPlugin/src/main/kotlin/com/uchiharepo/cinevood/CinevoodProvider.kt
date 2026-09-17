@@ -19,8 +19,7 @@ class CinevoodProvider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries,
-        TvType.AsianDrama,
-        TvType.Cartoon
+        TvType.AsianDrama
     )
 
     companion object {
@@ -108,12 +107,12 @@ class CinevoodProvider : MainAPI() {
 
         val poster = extractImageUrl(this)
 
-        return if (isTvSeries(title, href, emptyList())) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+        if (isTvSeries(title, href, emptyList())) {
+            return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = poster
             }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) {
+            return newMovieSearchResponse(title, href, TvType.Movie) {
                 this.posterUrl = poster
             }
         }
@@ -153,12 +152,13 @@ class CinevoodProvider : MainAPI() {
         val year = Regex("""\b(19\d{2}|20\d{2})\b""").find(title)?.groupValues?.get(1)?.toIntOrNull()
         val isSeries = isTvSeries(title, url, tags)
 
-        return if (isSeries) {
+        if (isSeries) {
             val headings = document.select("div.thecontent h2, div.thecontent h3, div.thecontent h4, div.thecontent h5")
                 .filter { it.text().contains(Regex("""(?i)(episode|ep\.?\s*\d+|E\d{2}|part)""")) }
 
-            val episodes = if (headings.isEmpty()) {
-                listOf(
+            val episodes = ArrayList<Episode>()
+            if (headings.isEmpty()) {
+                episodes.add(
                     newEpisode(url) {
                         this.name = "Watch / Download"
                         this.episode = 1
@@ -166,26 +166,28 @@ class CinevoodProvider : MainAPI() {
                     }
                 )
             } else {
-                headings.mapIndexed { idx, el ->
+                headings.forEachIndexed { idx, el ->
                     val text = el.text().trim()
                     val epNum = Regex("""\d+""").find(text)?.value?.toIntOrNull() ?: (idx + 1)
                     val season = Regex("""(?i)season\s*(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    newEpisode(url) {
-                        this.name = text
-                        this.episode = epNum
-                        this.season = season
-                    }
+                    episodes.add(
+                        newEpisode(url) {
+                            this.name = text
+                            this.episode = epNum
+                            this.season = season
+                        }
+                    )
                 }
             }
 
-            newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.year = year
                 this.tags = tags
             }
         } else {
-            newMovieLoadResponse(title, url, TvType.Movie, url) {
+            return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.year = year
