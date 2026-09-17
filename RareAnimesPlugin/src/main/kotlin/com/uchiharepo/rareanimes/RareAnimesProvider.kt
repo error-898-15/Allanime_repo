@@ -3,11 +3,15 @@ package com.uchiharepo.rareanimes
 import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
-import java.net.URLDecoder
+import java.net.URLEncoder
 
 class RareAnimesProvider : MainAPI() {
     override var mainUrl = "https://www.rareanimes.mov"
@@ -32,7 +36,10 @@ class RareAnimesProvider : MainAPI() {
         "$mainUrl/category/movies/page/" to "Movies"
     )
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    override suspend fun getMainPage(
+        page: Int,
+        request: MainPageRequest
+    ): HomePageResponse {
         val targetUrl = if (page <= 1) {
             if (request.data.contains("/home/")) "$mainUrl/home/"
             else request.data.removeSuffix("page/")
@@ -47,37 +54,57 @@ class RareAnimesProvider : MainAPI() {
         return newHomePageResponse(request.name, homeItems)
     }
 
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+
     override suspend fun search(query: String): List<SearchResponse> {
-        val searchUrl = "$mainUrl/?s=${query.trim().replace(" ", "+")}"
+        val searchUrl = "$mainUrl/?s=${URLEncoder.encode(query.trim(), "UTF-8")}"
         val document = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT)).document
         return document.select("article.herald-post, article.post").mapNotNull {
             it.toSearchResult()
         }
     }
 
+    private fun extractImageUrl(element: Element?): String? {
+        if (element == null) return null
+        val img = if (element.tagName() == "img") element else element.selectFirst("img") ?: return null
+        val raw = (
+            img.attr("srcset").split(",").lastOrNull()?.trim()?.substringBefore(" ")?.takeIf { it.isNotBlank() }
+                ?: img.attr("data-src").takeIf { it.isNotBlank() }
+                ?: img.attr("data-lazy-src").takeIf { it.isNotBlank() }
+                ?: img.attr("src")
+        ).trim()
+        if (raw.isBlank() || raw.startsWith("data:image")) return null
+        return if (raw.startsWith("//")) "https:$raw" else raw
+    }
+
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleElement = this.selectFirst(".entry-title a") ?: this.selectFirst("a[title]") ?: return null
+        val titleElement = this.selectFirst(".entry-title a, h2.entry-title a, h2 a, .entry-title") ?: return null
         val title = titleElement.text().trim()
-        val href = fixUrlNull(titleElement.attr("href")) ?: return null
-        if (title.isBlank() || href.isBlank()) return null
+        val href = (this.selectFirst("a[href*='/movies/'], a[href*='/hindi/'], .entry-title a, a")?.attr("href") ?: "").trim()
+        if (title.isBlank() || href.isBlank() || !href.startsWith("http")) return null
+        if (href.contains("/category/") || href.contains("/tag/") || href.endsWith("/home/")) return null
 
-        val posterElement = this.selectFirst(".herald-post-thumbnail img") ?: this.selectFirst("img")
-        val posterUrl = posterElement?.attr("srcset")?.split(",")?.lastOrNull()?.trim()?.substringBefore(" ")
-            ?: posterElement?.attr("src")
-            ?: posterElement?.attr("data-src")
+        val posterUrl = extractImageUrl(this)
+        val isMovie = href.contains("/movies/") || title.contains("Movie", ignoreCase = true)
 
-        return newAnimeSearchResponse(title, href, TvType.Anime) {
-            this.posterUrl = fixUrlNull(posterUrl)
+        return if (isMovie) {
+            newMovieSearchResponse(title, href, TvType.AnimeMovie) {
+                this.posterUrl = posterUrl
+            }
+        } else {
+            newTvSeriesSearchResponse(title, href, TvType.Anime) {
+                this.posterUrl = posterUrl
+            }
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
-        val title = document.selectFirst("h1.entry-title")?.text()?.trim()
+        val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim()
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
-            ?: "Unknown Title"
+            ?: "RareAnimes"
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-            ?: document.selectFirst(".herald-post-thumbnail img")?.attr("src")
+            ?: extractImageUrl(document.selectFirst(".herald-post-thumbnail, .entry-content"))
         val plot = document.selectFirst("meta[property=og:description]")?.attr("content")
             ?: document.selectFirst(".entry-content p")?.text()?.trim()
 
@@ -95,10 +122,13 @@ class RareAnimesProvider : MainAPI() {
             fun flushCurrentEpisode() {
                 if (currentServers.isNotEmpty()) {
                     val epName = currentEpName ?: "Episode ${episodeList.size + 1}"
+                    val epNum = currentEpNum ?: (episodeList.size + 1)
+                    val dataJson = EpisodeData(currentServers.toList()).toJson()
                     episodeList.add(
-                        newEpisode(toJson(EpisodeData(currentServers.toList()))) {
+                        newEpisode(dataJson) {
                             this.name = epName
-                            this.episode = currentEpNum ?: (episodeList.size + 1)
+                            this.episode = epNum
+                            this.posterUrl = poster
                         }
                     )
                     currentServers.clear()
@@ -118,7 +148,6 @@ class RareAnimesProvider : MainAPI() {
                     } else null
                 }
 
-                // Check for Episode Header
                 val epHeaderRegex = Regex("""^(?:Episode|Ep\b|\d+\.)\s*(\d+)""", RegexOption.IGNORE_CASE)
                 val epMatch = epHeaderRegex.find(text)
 
@@ -127,13 +156,11 @@ class RareAnimesProvider : MainAPI() {
                     currentEpNum = epMatch.groupValues[1].toIntOrNull()
                     currentEpName = text
                 } else if (links.isNotEmpty()) {
-                    // Extract language tag from line prefix
                     val langPrefixMatch = Regex("""^([A-Za-z\s\(\)]+)\s*[-–]""").find(text)
                     val langTag = langPrefixMatch?.groupValues?.get(1)?.trim()?.takeIf {
                         !it.contains("Episode", ignoreCase = true) && !it.contains("Watch", ignoreCase = true)
                     }
 
-                    // Check if the link itself is an archive link hosting all episodes
                     for (srv in links) {
                         if (srv.url.contains("store.animetoonhindi.com/archives/")) {
                             try {
@@ -145,10 +172,12 @@ class RareAnimesProvider : MainAPI() {
                                     val subEpNumMatch = Regex("""\b(?:S\d+)?E(\d+)\b""", RegexOption.IGNORE_CASE).find(subName)
                                     val subEpNum = subEpNumMatch?.groupValues?.get(1)?.toIntOrNull()
 
+                                    val epDataJson = EpisodeData(listOf(ServerLink(srv.name, subHref, langTag))).toJson()
                                     episodeList.add(
-                                        newEpisode(toJson(EpisodeData(listOf(ServerLink(srv.name, subHref, langTag))))) {
+                                        newEpisode(epDataJson) {
                                             this.name = subName
                                             this.episode = subEpNum ?: (episodeList.size + 1)
+                                            this.posterUrl = poster
                                         }
                                     )
                                 }
@@ -164,17 +193,20 @@ class RareAnimesProvider : MainAPI() {
             flushCurrentEpisode()
         }
 
+        val tags = document.select(".herald-tags a, .entry-tags a").map { it.text().trim() }
+
         return if (isMovie && episodeList.size <= 1) {
-            val movieServers = episodeList.firstOrNull()?.data ?: ""
-            newMovieLoadResponse(title, url, TvType.Movie, movieServers) {
+            val movieData = episodeList.firstOrNull()?.data ?: EpisodeData(emptyList()).toJson()
+            newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
                 this.posterUrl = poster
                 this.plot = plot
+                this.tags = tags
             }
         } else {
-            newAnimeLoadResponse(title, url, TvType.Anime) {
+            newTvSeriesLoadResponse(title, url, TvType.Anime, episodeList) {
                 this.posterUrl = poster
                 this.plot = plot
-                addEpisodes(DubStatus.Subbed, episodeList)
+                this.tags = tags
             }
         }
     }
@@ -220,7 +252,7 @@ class RareAnimesProvider : MainAPI() {
                 }
             } else {
                 try {
-                    if (loadExtractor(resolvedUrl, subtitleCallback, callback)) {
+                    if (loadExtractor(resolvedUrl, "https://codedew.com/", subtitleCallback, callback)) {
                         loadedAny = true
                     }
                 } catch (e: Exception) {
@@ -255,7 +287,7 @@ class RareAnimesProvider : MainAPI() {
                 } else if (fullLoc.contains("multiquality")) {
                     return extractMultiQuality(fullLoc, serverName, langTag, subtitleCallback, callback)
                 } else {
-                    return loadExtractor(fullLoc, subtitleCallback, callback)
+                    return loadExtractor(fullLoc, "https://codedew.com/", subtitleCallback, callback)
                 }
             }
 
@@ -273,7 +305,7 @@ class RareAnimesProvider : MainAPI() {
                 val secondLoc = secondRes.headers["location"]
                 if (!secondLoc.isNullOrBlank()) {
                     val fullLoc = if (secondLoc.startsWith("/")) "https://codedew.com$secondLoc" else secondLoc
-                    return loadExtractor(fullLoc, subtitleCallback, callback)
+                    return loadExtractor(fullLoc, "https://codedew.com/", subtitleCallback, callback)
                 }
 
                 val doc2 = secondRes.document
@@ -288,12 +320,12 @@ class RareAnimesProvider : MainAPI() {
                         extractPixeldrain(finalTarget, "$serverName$langTag", callback)
                         return true
                     } else {
-                        return loadExtractor(finalTarget, subtitleCallback, callback)
+                        return loadExtractor(finalTarget, "https://codedew.com/", subtitleCallback, callback)
                     }
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // resolve error
         }
         return success
     }
@@ -325,14 +357,15 @@ class RareAnimesProvider : MainAPI() {
                 if (directUrl.contains(".workers.dev/")) {
                     try {
                         val b64 = directUrl.substringAfter(".workers.dev/").substringBefore("?")
-                        val decodedJson = String(Base64.decode(b64, Base64.DEFAULT))
+                        val decodedBytes = Base64.decode(b64, Base64.DEFAULT)
+                        val decodedJson = String(decodedBytes, Charsets.UTF_8)
                         val innerUrl = Regex(""""url"\s*:\s*"([^"]+)"""").find(decodedJson)?.groupValues?.get(1)?.replace("\\/", "/")
                         if (!innerUrl.isNullOrBlank()) {
                             if (innerUrl.contains("pixeldra.in")) {
                                 extractPixeldrain(innerUrl, "$serverName $subName$langTag", callback)
                                 found = true
                                 continue
-                            } else if (loadExtractor(innerUrl, subtitleCallback, callback)) {
+                            } else if (loadExtractor(innerUrl, "https://codedew.com/", subtitleCallback, callback)) {
                                 found = true
                                 continue
                             }
@@ -363,7 +396,7 @@ class RareAnimesProvider : MainAPI() {
                 found = true
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            // stream beta error
         }
         return found
     }
