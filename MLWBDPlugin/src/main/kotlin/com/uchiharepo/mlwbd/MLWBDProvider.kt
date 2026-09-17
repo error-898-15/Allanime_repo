@@ -12,6 +12,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLEncoder
+import java.util.Base64
 
 class MLWBDProvider : MainAPI() {
     override var mainUrl = "https://fojik.site"
@@ -33,7 +34,9 @@ class MLWBDProvider : MainAPI() {
         val MIRROR_DOMAINS = listOf(
             "https://fojik.site",
             "https://mlwbd.click",
-            "https://mlwbd.cc"
+            "https://mlwbd.cc",
+            "https://mlwbd.is",
+            "https://mlwbd.app"
         )
     }
 
@@ -140,7 +143,7 @@ class MLWBDProvider : MainAPI() {
     }
 
     private fun extractPoster(document: Document): String? {
-        // 1. Check OpenGraph & Twitter Meta Tags
+        // 1. Check OpenGraph & Twitter Meta Tags (Full HD resolution directly from WP header)
         val metaSelectors = listOf(
             "meta[property='og:image']",
             "meta[name='twitter:image']",
@@ -153,7 +156,7 @@ class MLWBDProvider : MainAPI() {
             if (!cleaned.isNullOrBlank()) return cleaned
         }
 
-        // 2. Check DooPlay / WordPress Poster Containers
+        // 2. Check Standard DooPlay / WordPress Poster Containers
         val selectors = listOf(
             "div.poster img",
             ".sheader .poster img",
@@ -233,7 +236,7 @@ class MLWBDProvider : MainAPI() {
         val yearText = document.selectFirst(".extra span.date, .extra span.country + span, .date")?.text()
         val year = Regex("""(19dd|20dd)""").find("$yearText $title")?.groupValues?.get(1)?.toIntOrNull()
 
-        // Extract Movie-Specific Genres (Avoid matching sidebar/header menus)
+        // Extract Item-Specific Genres (Filtered from general site navigation)
         val tags = document.select("div.sheader div.sgenres a, div.data div.sgenres a, div.custom_fields a[href*='/genre/'], .wp-content a[rel='category tag'], div.tags a")
             .map { it.text().trim() }
             .filter { it.isNotBlank() && !it.equals("Movies", ignoreCase = true) && !it.equals("TV Shows", ignoreCase = true) }
@@ -312,9 +315,42 @@ class MLWBDProvider : MainAPI() {
     ): Boolean {
         val document = getDocument(data)
         var anyFound = false
+        val processedUrls = mutableSetOf<String>()
 
         // =========================================================================
-        // 1. ALL SERVERS & BUTTONS PARSING (HubCloud, GDFlix, PixelDrain, Gofile, etc.)
+        // 1. ALL DOWNLOAD FORMS (FU, FN, FU2, FU4, FU5, technews24, freethemesy)
+        // =========================================================================
+        val forms = document.select("form[action], form[method]")
+        for (form in forms) {
+            val action = form.attr("action").trim()
+            val fullAction = when {
+                action.startsWith("http") -> action
+                action.startsWith("//") -> "https:$action"
+                action.startsWith("/") -> "$mainUrl$action"
+                action.isBlank() -> data
+                else -> action
+            }
+
+            if (fullAction.contains("search", ignoreCase = true) && !fullAction.contains("blog.php")) continue
+            if (fullAction.contains("login") || fullAction.contains("report")) continue
+
+            val formData = mutableMapOf<String, String>()
+            form.select("input[name]").forEach { input ->
+                val name = input.attr("name")
+                val value = input.attr("value")
+                if (name.isNotBlank()) {
+                    formData[name] = value
+                }
+            }
+
+            if (formData.isNotEmpty()) {
+                val ok = resolveFormSubmission(fullAction, formData, data, subtitleCallback, callback)
+                if (ok) anyFound = true
+            }
+        }
+
+        // =========================================================================
+        // 2. ALL LINK BUTTONS & REPOSITORIES ACROSS THE WHOLE PAGE
         // =========================================================================
         val candidateSelectors = listOf(
             "a[href*='hubcloud']",
@@ -325,6 +361,7 @@ class MLWBDProvider : MainAPI() {
             "a[href*='fastdrive']",
             "a[href*='driveseed']",
             "a[href*='drivelinks']",
+            "a[href*='drivebuzz']",
             "a[href*='pixeldrain']",
             "a[href*='drive.google']",
             "a[href*='gofile']",
@@ -337,6 +374,9 @@ class MLWBDProvider : MainAPI() {
             "a[href*='mega.nz']",
             "a[href*='droplink']",
             "a[href*='dropvip']",
+            "a[href*='freethemesy']",
+            "a[href*='technews24']",
+            "a[href*='sharelink']",
             "a.btn-download",
             "a.dlink",
             "div.download-links a",
@@ -350,7 +390,6 @@ class MLWBDProvider : MainAPI() {
             ".download a"
         )
 
-        val processedUrls = mutableSetOf<String>()
         val linkButtons = document.select(candidateSelectors.joinToString(", "))
 
         for (btn in linkButtons) {
@@ -366,7 +405,7 @@ class MLWBDProvider : MainAPI() {
             val quality = determineQuality("$btnText $parentText")
 
             // --- Server 1: HubCloud / HubDrive / Vifix / FastCloud ---
-            if (href.contains("hubcloud") || href.contains("vifix.site") || href.contains("hubdrive") || href.contains("fastcloud")) {
+            if (href.contains("hubcloud") || href.contains("vifix.site") || href.contains("hubdrive") || href.contains("fastcloud") || href.contains("drivebuzz")) {
                 val ok = extractHubCloud(href, quality, subtitleCallback, callback)
                 if (ok) anyFound = true
             }
@@ -409,7 +448,7 @@ class MLWBDProvider : MainAPI() {
                 )
                 anyFound = true
             }
-            // --- Server 5: Gofile / FilePress / StreamTape / VidHide / Mega / Dood / Others ---
+            // --- Server 5: Multi-Host Extractors ---
             else {
                 try {
                     loadExtractor(href, data, subtitleCallback, callback)
@@ -417,17 +456,6 @@ class MLWBDProvider : MainAPI() {
                 } catch (e: Exception) { }
             }
         }
-
-        // =========================================================================
-        // 2. MLWBD SHORTENER & FORM TOKEN BYPASS (FU, FN, FU4, FU5, freethemesy, sharelink)
-        // =========================================================================
-        try {
-            val fuInput = document.selectFirst("input[name='FU'], input[name='FU4'], input[name='FU5']")
-            if (fuInput != null) {
-                val bypassed = resolveMlwbdShortenerForm(document, data, subtitleCallback, callback)
-                if (bypassed) anyFound = true
-            }
-        } catch (e: Exception) { }
 
         // =========================================================================
         // 3. DOOPLAY ONLINE PLAYER OPTIONS (Dual API: WP-JSON + Admin-Ajax) - EXCLUDES TRAILERS
@@ -487,11 +515,10 @@ class MLWBDProvider : MainAPI() {
 
                 if (!embedUrl.isNullOrBlank()) {
                     val cleanedEmbed = if (embedUrl.startsWith("//")) "https:$embedUrl" else embedUrl
-                    // Filter out YouTube trailers inside player options
                     if (cleanedEmbed.contains("youtube.com") || cleanedEmbed.contains("youtu.be")) {
                         continue
                     }
-                    if (cleanedEmbed.contains("hubcloud") || cleanedEmbed.contains("vifix.site")) {
+                    if (cleanedEmbed.contains("hubcloud") || cleanedEmbed.contains("vifix.site") || cleanedEmbed.contains("fastcloud")) {
                         val ok = extractHubCloud(cleanedEmbed, Pair("1080p FHD", Qualities.P1080.value), subtitleCallback, callback)
                         if (ok) anyFound = true
                     } else {
@@ -505,7 +532,7 @@ class MLWBDProvider : MainAPI() {
         }
 
         // =========================================================================
-        // 4. EMBEDDED IFRAMES PARSING (EXCLUDES YOUTUBE)
+        // 4. EMBEDDED IFRAMES (EXCLUDING YOUTUBE)
         // =========================================================================
         val iframes = document.select("iframe[src], iframe[data-src]")
         for (iframe in iframes) {
@@ -520,6 +547,94 @@ class MLWBDProvider : MainAPI() {
         }
 
         return anyFound
+    }
+
+    // --- Recursive Form Solver for Token Protected Download Buttons ---
+    private suspend fun resolveFormSubmission(
+        actionUrl: String,
+        formData: Map<String, String>,
+        refererUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        return try {
+            val res = app.post(
+                actionUrl,
+                data = formData,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Referer" to refererUrl
+                )
+            ).document
+
+            var found = false
+
+            // Check nested forms
+            for (subForm in res.select("form")) {
+                val subAction = subForm.attr("action").trim()
+                val subData = mutableMapOf<String, String>()
+                subForm.select("input[name]").forEach {
+                    subData[it.attr("name")] = it.attr("value")
+                }
+                if (subData.isNotEmpty()) {
+                    val fullSubAction = if (subAction.startsWith("http")) subAction else "https://freethemesy.com/$subAction"
+                    val ok = resolveFormSubmission(fullSubAction, subData, actionUrl, subtitleCallback, callback)
+                    if (ok) found = true
+                }
+            }
+
+            // Check all links on the redirected page
+            for (a in res.select("a[href]")) {
+                val href = a.attr("href").trim()
+                if (href.isBlank() || href.startsWith("#")) continue
+                if (href.contains("hubcloud") || href.contains("vifix.site") || href.contains("fastcloud") || href.contains("hubdrive")) {
+                    val ok = extractHubCloud(href, Pair("1080p FHD", Qualities.P1080.value), subtitleCallback, callback)
+                    if (ok) found = true
+                } else if (href.contains("pixeldrain.com")) {
+                    val id = href.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
+                    if (id.isNotEmpty()) {
+                        val streamUrl = "https://pixeldrain.com/api/file/$id"
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "$name - PixelDrain",
+                                name = "$name - PixelDrain (1080p FHD)",
+                                url = streamUrl,
+                                type = ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = "https://pixeldrain.com/"
+                                this.quality = Qualities.P1080.value
+                            }
+                        )
+                        found = true
+                    }
+                } else if (href.contains("gdflix") || href.contains("fastdrive") || href.contains("driveseed")) {
+                    val ok = extractGDFlix(href, Pair("1080p FHD", Qualities.P1080.value), subtitleCallback, callback)
+                    if (ok) found = true
+                } else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")) {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = "$name - Direct",
+                            name = "$name - Direct Stream",
+                            url = href,
+                            type = if (href.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = actionUrl
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    found = true
+                } else {
+                    try {
+                        loadExtractor(href, actionUrl, subtitleCallback, callback)
+                        found = true
+                    } catch (e: Exception) { }
+                }
+            }
+
+            found
+        } catch (e: Exception) {
+            false
+        }
     }
 
     // --- Original Server 1: HubCloud Direct Stream Extractor ---
@@ -547,7 +662,7 @@ class MLWBDProvider : MainAPI() {
             // Check page 1 links first
             var extracted = parseHubCloudLinks(doc1, targetUrl, quality, subtitleCallback, callback)
 
-            val downloadBtn = doc1.selectFirst("a#download, a.btn-success, a.btn-primary, a[href*='hubcloud.php'], a[href*='/download'], a[href*='/file/']")
+            val downloadBtn = doc1.selectFirst("a#download, a.btn-success, a.btn-primary, a[href*='hubcloud.php'], a[href*='/download'], a[href*='/file/'], a[href*='/video/']")
             val nextUrl = downloadBtn?.attr("href") ?: targetUrl
             val fullNextUrl = when {
                 nextUrl.startsWith("http") -> nextUrl
@@ -690,7 +805,7 @@ class MLWBDProvider : MainAPI() {
                         )
                         extracted = true
                     }
-                } else if (streamHref.contains("hubcloud") || streamHref.contains("vifix.site")) {
+                } else if (streamHref.contains("hubcloud") || streamHref.contains("vifix.site") || streamHref.contains("fastcloud")) {
                     val ok = extractHubCloud(streamHref, quality, subtitleCallback, callback)
                     if (ok) extracted = true
                 } else if (streamHref.contains("drive.google") || streamHref.contains("gofile.io")) {
@@ -717,40 +832,6 @@ class MLWBDProvider : MainAPI() {
         } catch (e: Exception) {
             false
         }
-    }
-
-    // --- Shortener & Landing Page Form Bypasser ---
-    private suspend fun resolveMlwbdShortenerForm(
-        document: Document,
-        originalUrl: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val fu = document.selectFirst("input[name='FU']")?.attr("value")
-        val fn = document.selectFirst("input[name='FN']")?.attr("value")
-        if (!fu.isNullOrBlank()) {
-            val blogRes = app.post(
-                "https://search.technews24.site/blog.php",
-                data = mapOf("FU" to fu, "FN" to (fn ?: "")),
-                headers = mapOf("User-Agent" to USER_AGENT, "Referer" to originalUrl)
-            ).document
-            val fu2 = blogRes.selectFirst("input[name='FU2']")?.attr("value")
-            if (!fu2.isNullOrBlank()) {
-                val dldRes = app.post(
-                    "https://freethemesy.com/dld.php",
-                    data = mapOf("FU2" to fu2),
-                    headers = mapOf("User-Agent" to USER_AGENT)
-                ).document
-                for (a in dldRes.select("a[href]")) {
-                    val linkHref = a.attr("href").trim()
-                    if (linkHref.contains("hubcloud") || linkHref.contains("pixeldrain") || linkHref.contains("gdflix")) {
-                        loadExtractor(linkHref, originalUrl, subtitleCallback, callback)
-                        return true
-                    }
-                }
-            }
-        }
-        return false
     }
 
     private fun determineQuality(text: String): Pair<String, Int> {
