@@ -7,7 +7,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -50,17 +49,17 @@ class CinevoodProvider : MainAPI() {
         val headers = COMMON_HEADERS + ("Referer" to referer)
         return try {
             val res = app.get(url, headers = headers, timeout = 20)
-            Jsoup.parse(res.text, url)
+            res.document
         } catch (e: Exception) {
-            val currentDomain = try { URI(url).host } catch (_: Exception) { null }
+            val currentDomain = try { URI(url).host } catch (ignored: Exception) { null }
             var lastErr: Exception = e
             for (mirror in MIRROR_DOMAINS) {
-                val mirrorHost = try { URI(mirror).host } catch (_: Exception) { null }
+                val mirrorHost = try { URI(mirror).host } catch (ignored: Exception) { null }
                 if (currentDomain != null && mirrorHost != null && mirrorHost.equals(currentDomain, ignoreCase = true)) continue
                 val fallbackUrl = if (currentDomain != null) url.replace("https://$currentDomain", mirror) else mirror
                 try {
                     val res = app.get(fallbackUrl, headers = headers, timeout = 20)
-                    return Jsoup.parse(res.text, fallbackUrl)
+                    return res.document
                 } catch (err: Exception) {
                     lastErr = err
                 }
@@ -96,25 +95,23 @@ class CinevoodProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val targetUrl = if (page == 1) {
+        val url = if (page <= 1) {
             request.data
         } else {
-            "${request.data.trimEnd('/')}/page/$page/"
+            val base = request.data.removeSuffix("/")
+            "$base/page/$page/"
         }
-
-        val document = getDocument(targetUrl)
-        val home = document.select("article.latestPost, article.post, article.item").mapNotNull {
+        val document = getDocument(url)
+        val items = document.select("article.latestPost, article.post, article.item").mapNotNull {
             it.toSearchResult()
         }
-
-        val hasNext = document.selectFirst("a.next.page-numbers, .pagination .nav-next a") != null
-        return newHomePageResponse(request.name, home, hasNext = hasNext)
+        return newHomePageResponse(request.name, items)
     }
 
     private fun cleanImageUrl(url: String?): String? {
         if (url.isNullOrBlank()) return null
         var clean = url.trim()
-        if (clean.startsWith("data:image") || clean.contains("cropped-favicon") || clean.contains("cvlogo.png")) {
+        if (clean.startsWith("data:image") || (clean.contains("cropped-") && clean.contains("icon"))) {
             return null
         }
         if (clean.startsWith("//")) {
@@ -148,7 +145,8 @@ class CinevoodProvider : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val titleEl = selectFirst("h2.title.front-view-title a, h2.title a, h2.front-view-title a, h2 a") ?: return null
         val title = titleEl.text().trim().ifBlank { titleEl.attr("title").trim() }.ifBlank { return null }
-        val href = fixUrlNull(titleEl.attr("abs:href")) ?: return null
+        val href = titleEl.attr("abs:href").ifBlank { titleEl.attr("href") }.trim()
+        if (href.isBlank()) return null
 
         if (href.containsAny("/category/", "/tag/", "/page/")) return null
 
@@ -358,7 +356,7 @@ class CinevoodProvider : MainAPI() {
         return try {
             loadExtractor(url, refererUrl, subtitleCallback, callback)
             true
-        } catch (_: Exception) {
+        } catch (ignored: Exception) {
             false
         }
     }
@@ -379,7 +377,7 @@ class CinevoodProvider : MainAPI() {
                 return@runCatching finalUrl
             }
 
-            val doc = Jsoup.parse(response.text, finalUrl)
+            val doc = response.document
             doc.selectFirst(
                 "a#download-btn, a.btn-download, a[href*=hubcloud], a[href*=fastcloud], " +
                 "a[href*=streamtape], a[href*=dood], a[href*=vidnest], a[href*=filelions], " +
@@ -407,7 +405,7 @@ class CinevoodProvider : MainAPI() {
                 }
             }
             extracted
-        } catch (_: Exception) {
+        } catch (ignored: Exception) {
             false
         }
     }
@@ -479,7 +477,7 @@ class CinevoodProvider : MainAPI() {
                 try {
                     loadExtractor(href, refererUrl, subtitleCallback, callback)
                     found = true
-                } catch (_: Exception) { }
+                } catch (ignored: Exception) { }
             }
         }
         return found
@@ -518,7 +516,7 @@ class CinevoodProvider : MainAPI() {
                 }
             }
             extracted
-        } catch (_: Exception) {
+        } catch (ignored: Exception) {
             false
         }
     }
@@ -560,7 +558,7 @@ class CinevoodProvider : MainAPI() {
         }
     }
 
-    private fun String.containsAny(vararg tokens: String, ignoreCase: Boolean = true): Boolean {
-        return tokens.any { this.contains(it, ignoreCase) }
+    private fun String.containsAny(vararg tokens: String): Boolean {
+        return tokens.any { this.contains(it, ignoreCase = true) }
     }
 }
