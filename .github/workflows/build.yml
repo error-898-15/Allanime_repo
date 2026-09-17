@@ -62,7 +62,7 @@ jobs:
 
       - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
         run: |
-          python3 -c "
+          python3 - << 'EOF'
           import json, glob, zipfile, os, hashlib
           
           PLUGIN_META = {
@@ -127,7 +127,7 @@ jobs:
                               item['fileSize'] = sz
                   with open(pjson, 'w') as f:
                       json.dump(data, f, indent=2)
-          "
+          EOF
 
       - name: Verify Output Artifacts
         run: |
