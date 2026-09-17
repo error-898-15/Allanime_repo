@@ -24,16 +24,16 @@
   {
     "name": "ZLive",
     "internalName": "ZLivePlugin",
-    "version": 1,
+    "version": 2,
     "apiVersion": 1,
-    "description": "ZLive - Watch Live Sports, Cricket, Football & TV Channels in High Quality",
+    "description": "ZLive - Watch Live Sports, Events & Worldwide TV Channels Free",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Live"
     ],
-    "language": "hi",
+    "language": "en",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/ZLivePlugin.cs3",
     "fileHash": "",
@@ -46,14 +46,15 @@
     "internalName": "AnimeDekhoPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "AnimeDekho - Watch Hindi, Tamil, Telugu Dubbed Anime and Cartoons",
+    "description": "AnimeDekho - Watch Hindi & Multi-Audio Anime & Movies with original high speed servers",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Cartoon"
+      "Cartoon",
+      "Movie"
     ],
     "language": "hi",
     "status": 1,
@@ -86,5 +87,5 @@
     "fileSize": 0,
     "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
+  }
+    ]
