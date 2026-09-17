@@ -80,6 +80,10 @@ jobs:
               'AnimeSaltPlugin': {
                   'name': 'AnimeSalt',
                   'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
+              },
+              'RareAnimesPlugin': {
+                  'name': 'RareAnimes',
+                  'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/Rare-Animes-India.png'
               }
           }
 
