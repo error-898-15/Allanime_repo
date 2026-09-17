@@ -44,12 +44,12 @@ class MLWBDProvider : MainAPI() {
         return try {
             app.get(url, headers = headers).document
         } catch (e: Exception) {
-            val currentDomain = URI(url).host
+            val currentDomain = try { URI(url).host } catch (e2: Exception) { null }
             var lastErr: Exception = e
             for (mirror in MIRROR_DOMAINS) {
-                val mirrorHost = URI(mirror).host
-                if (mirrorHost.equals(currentDomain, ignoreCase = true)) continue
-                val fallbackUrl = url.replace("https://$currentDomain", mirror)
+                val mirrorHost = try { URI(mirror).host } catch (e2: Exception) { null }
+                if (currentDomain != null && mirrorHost != null && mirrorHost.equals(currentDomain, ignoreCase = true)) continue
+                val fallbackUrl = if (currentDomain != null) url.replace("https://$currentDomain", mirror) else mirror
                 try {
                     return app.get(fallbackUrl, headers = headers).document
                 } catch (err: Exception) {
@@ -137,7 +137,7 @@ class MLWBDProvider : MainAPI() {
         }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse? {
         val document = getDocument(url)
         val title = document.selectFirst("div.data h1, h1.entry-title, h1")?.text()?.trim()
             ?: "Unknown Title"
@@ -172,7 +172,7 @@ class MLWBDProvider : MainAPI() {
                 this.plot = plot
                 this.year = year
                 this.tags = tags
-                this.rating = rating?.toIntOrNull()
+                this.score = Score.from10(rating)
             }
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -180,7 +180,7 @@ class MLWBDProvider : MainAPI() {
                 this.plot = plot
                 this.year = year
                 this.tags = tags
-                this.rating = rating?.toIntOrNull()
+                this.score = Score.from10(rating)
             }
         }
     }
@@ -208,7 +208,7 @@ class MLWBDProvider : MainAPI() {
                 val ok = extractHubCloud(href, quality, callback)
                 if (ok) anyFound = true
             } else if (href.contains("gdflix") || href.contains("fastdrive")) {
-                val ok = extractGDFlix(href, quality, callback)
+                val ok = extractGDFlix(href, quality, subtitleCallback, callback)
                 if (ok) anyFound = true
             } else if (href.contains("pixeldrain.com")) {
                 val id = href.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
@@ -244,7 +244,7 @@ class MLWBDProvider : MainAPI() {
                 try {
                     loadExtractor(href, data, subtitleCallback, callback)
                     anyFound = true
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
         }
 
@@ -278,7 +278,7 @@ class MLWBDProvider : MainAPI() {
                             anyFound = true
                         }
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
         }
 
@@ -291,7 +291,7 @@ class MLWBDProvider : MainAPI() {
                 try {
                     loadExtractor(fullSrc, data, subtitleCallback, callback)
                     anyFound = true
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
         }
 
@@ -321,10 +321,19 @@ class MLWBDProvider : MainAPI() {
 
             val downloadBtn = doc1.selectFirst("a#download, a.btn-success, a[href*='hubcloud.php']")
             val nextUrl = downloadBtn?.attr("href") ?: targetUrl
-            val fullNextUrl = if (nextUrl.startsWith("/")) {
-                val base = URI(targetUrl)
-                "${base.scheme}://${base.host}$nextUrl"
-            } else nextUrl
+            val fullNextUrl = when {
+                nextUrl.startsWith("http") -> nextUrl
+                nextUrl.startsWith("//") -> "https:$nextUrl"
+                nextUrl.startsWith("/") -> {
+                    try {
+                        val base = URI(targetUrl)
+                        "${base.scheme}://${base.host}$nextUrl"
+                    } catch (e: Exception) {
+                        nextUrl
+                    }
+                }
+                else -> nextUrl
+            }
 
             val doc2 = if (fullNextUrl != targetUrl) {
                 app.get(
@@ -406,6 +415,7 @@ class MLWBDProvider : MainAPI() {
     private suspend fun extractGDFlix(
         url: String,
         quality: Pair<String, Int>,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
@@ -414,7 +424,7 @@ class MLWBDProvider : MainAPI() {
             val streamHref = streamBtn?.attr("href") ?: return false
 
             if (streamHref.contains("drive.google") || streamHref.contains("pixeldrain")) {
-                loadExtractor(streamHref, url, {}, callback)
+                loadExtractor(streamHref, url, subtitleCallback, callback)
                 true
             } else if (streamHref.endsWith(".mp4") || streamHref.endsWith(".mkv")) {
                 callback.invoke(
