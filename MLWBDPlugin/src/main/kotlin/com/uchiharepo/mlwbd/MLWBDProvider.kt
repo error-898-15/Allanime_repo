@@ -106,7 +106,7 @@ class MLWBDProvider : MainAPI() {
         } else if (clean.startsWith("/")) {
             clean = "$mainUrl$clean"
         }
-        // Upgrade TMDB image quality & strip WordPress thumbnail crop sizes (-200x300.jpg, -185x278.jpg, etc.)
+        // Upgrade TMDB image quality & strip WordPress thumbnail crops (-200x300.jpg, -185x278.jpg, etc.)
         return clean.replace("/w185/", "/w500/")
                     .replace("/w342/", "/w500/")
                     .replace("/w300/", "/w500/")
@@ -201,14 +201,18 @@ class MLWBDProvider : MainAPI() {
         val isMovie = href.contains("/movie/") || (!href.contains("/tvshows/") && !href.contains("/series/"))
         val isAnime = href.contains("/anime/") || title.contains("Anime", ignoreCase = true)
 
-        return when {
-            isAnime -> newAnimeSearchResponse(title, href, TvType.Anime) {
+        val targetType = when {
+            isAnime -> TvType.Anime
+            isMovie -> TvType.Movie
+            else -> TvType.TvSeries
+        }
+
+        return if (isMovie) {
+            newMovieSearchResponse(title, href, targetType) {
                 this.posterUrl = posterUrl
             }
-            isMovie -> newMovieSearchResponse(title, href, TvType.Movie) {
-                this.posterUrl = posterUrl
-            }
-            else -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+        } else {
+            newTvSeriesSearchResponse(title, href, targetType) {
                 this.posterUrl = posterUrl
             }
         }
@@ -241,6 +245,11 @@ class MLWBDProvider : MainAPI() {
 
         val rating = document.selectFirst(".dt_rating_vgs, .rating")?.text()?.trim()
         val isAnime = url.contains("/anime/") || tags.any { it.contains("Anime", ignoreCase = true) }
+        val targetType = when {
+            isAnime -> TvType.Anime
+            url.contains("/tvshows/") || url.contains("/series/") -> TvType.TvSeries
+            else -> TvType.Movie
+        }
 
         val episodeElements = document.select("#seasons .episodios li, .episodios li")
         return if (episodeElements.isNotEmpty()) {
@@ -261,51 +270,28 @@ class MLWBDProvider : MainAPI() {
                 }
             }
 
-            if (isAnime) {
-                newAnimeLoadResponse(title, url, TvType.Anime) {
-                    this.posterUrl = posterUrl
-                    this.backgroundPosterUrl = backdropUrl
-                    this.plot = plot
-                    this.year = year
-                    this.tags = tags
-                    this.score = Score.from10(rating)
-                    addEpisodes(DubStatus.Subbed, episodes)
-                }
-            } else {
-                newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                    this.posterUrl = posterUrl
-                    this.backgroundPosterUrl = backdropUrl
-                    this.plot = plot
-                    this.year = year
-                    this.tags = tags
-                    this.score = Score.from10(rating)
-                }
+            newTvSeriesLoadResponse(title, url, targetType, episodes) {
+                this.posterUrl = posterUrl
+                this.backgroundPosterUrl = backdropUrl
+                this.plot = plot
+                this.year = year
+                this.tags = tags
+                this.score = Score.from10(rating)
             }
         } else {
-            if (isAnime) {
-                newAnimeLoadResponse(title, url, TvType.Anime) {
-                    this.posterUrl = posterUrl
-                    this.backgroundPosterUrl = backdropUrl
-                    this.plot = plot
-                    this.year = year
-                    this.tags = tags
-                    this.score = Score.from10(rating)
-                }
-            } else {
-                newMovieLoadResponse(title, url, TvType.Movie, url) {
-                    this.posterUrl = posterUrl
-                    this.backgroundPosterUrl = backdropUrl
-                    this.plot = plot
-                    this.year = year
-                    this.tags = tags
-                    this.score = Score.from10(rating)
-                }
+            newMovieLoadResponse(title, url, targetType, url) {
+                this.posterUrl = posterUrl
+                this.backgroundPosterUrl = backdropUrl
+                this.plot = plot
+                this.year = year
+                this.tags = tags
+                this.score = Score.from10(rating)
             }
         }
     }
 
     // =========================================================================
-    // HIGH-SPEED, NON-BLOCKING STREAM & LINK EXTRACTOR WITH FULL HEADERS
+    // HIGH-SPEED, NON-BLOCKING STREAM & LINK EXTRACTOR
     // =========================================================================
     override suspend fun loadLinks(
         data: String,
@@ -317,7 +303,7 @@ class MLWBDProvider : MainAPI() {
         var anyFound = false
         val processedUrls = mutableSetOf<String>()
 
-        // 1. FAST TARGETED FORM EXTRACTION (Single-pass, no deep recursion)
+        // 1. FAST TARGETED FORM EXTRACTION (Single-pass)
         val forms = document.select("form[action*='dld.php'], form[action*='blog.php'], form:has(input[name='FU']), form:has(input[name='token'])")
         for (form in forms.take(4)) {
             val action = form.attr("action").trim()
@@ -375,7 +361,7 @@ class MLWBDProvider : MainAPI() {
         for (btn in allAnchorTags) {
             val href = btn.attr("href").trim()
             if (href.isBlank() || href.startsWith("#") || href.contains("facebook.com") || href.contains("t.me") || href.contains("telegram")) continue
-            // FILTER OUT YOUTUBE TRAILERS
+            // STRICT FILTER OUT YOUTUBE TRAILERS
             if (href.contains("youtube.com") || href.contains("youtu.be")) continue
 
             val isTarget = targetServerKeywords.any { href.contains(it, ignoreCase = true) } ||
@@ -415,11 +401,6 @@ class MLWBDProvider : MainAPI() {
                     ) {
                         this.referer = data
                         this.quality = quality.second
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to data,
-                            "Accept" to "*/*"
-                        )
                     }
                 )
                 anyFound = true
@@ -508,7 +489,7 @@ class MLWBDProvider : MainAPI() {
         return anyFound
     }
 
-    // --- PixelDrain Direct Stream Emitter with Full ExoPlayer Headers ---
+    // --- PixelDrain Direct Stream Emitter ---
     private fun emitPixelDrain(
         url: String,
         qualityName: String,
@@ -527,11 +508,6 @@ class MLWBDProvider : MainAPI() {
             ) {
                 this.referer = "https://pixeldrain.com/"
                 this.quality = qualityValue
-                this.headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "https://pixeldrain.com/",
-                    "Accept" to "*/*"
-                )
             }
         )
         return true
@@ -627,11 +603,6 @@ class MLWBDProvider : MainAPI() {
                     ) {
                         this.referer = refererUrl
                         this.quality = quality.second
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to refererUrl,
-                            "Accept" to "*/*"
-                        )
                     }
                 )
                 found = true
@@ -651,11 +622,6 @@ class MLWBDProvider : MainAPI() {
                     ) {
                         this.referer = refererUrl
                         this.quality = quality.second
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to refererUrl,
-                            "Accept" to "*/*"
-                        )
                     }
                 )
                 found = true
@@ -671,11 +637,6 @@ class MLWBDProvider : MainAPI() {
                     ) {
                         this.referer = refererUrl
                         this.quality = quality.second
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to refererUrl,
-                            "Accept" to "*/*"
-                        )
                     }
                 )
                 found = true
@@ -691,7 +652,7 @@ class MLWBDProvider : MainAPI() {
         return found
     }
 
-    // --- GDFlix / FastDrive Extractor with Stream Headers ---
+    // --- GDFlix / FastDrive Extractor ---
     private suspend fun extractGDFlix(
         url: String,
         quality: Pair<String, Int>,
@@ -727,11 +688,6 @@ class MLWBDProvider : MainAPI() {
                         ) {
                             this.referer = url
                             this.quality = quality.second
-                            this.headers = mapOf(
-                                "User-Agent" to USER_AGENT,
-                                "Referer" to url,
-                                "Accept" to "*/*"
-                            )
                         }
                     )
                     extracted = true
