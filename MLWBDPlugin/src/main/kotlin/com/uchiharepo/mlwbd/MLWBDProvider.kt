@@ -7,7 +7,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -106,12 +105,11 @@ class MLWBDProvider : MainAPI() {
         } else if (clean.startsWith("/")) {
             clean = "$mainUrl$clean"
         }
-        // Upgrade TMDB image quality & strip WordPress thumbnail crops (-200x300.jpg, -185x278.jpg, etc.)
         return clean.replace("/w185/", "/w500/")
                     .replace("/w342/", "/w500/")
                     .replace("/w300/", "/w500/")
                     .replace("/w780/", "/w500/")
-                    .replace(Regex("""-d+xd+.(jpg|jpeg|png|webp)""", RegexOption.IGNORE_CASE), ".$1")
+                    .replace(Regex("""-\d+x\d+\.(jpg|jpeg|png|webp)""", RegexOption.IGNORE_CASE), ".$1")
     }
 
     private fun extractImageUrl(element: Element?): String? {
@@ -177,7 +175,7 @@ class MLWBDProvider : MainAPI() {
     private fun extractBackdrop(document: Document): String? {
         val styleAttr = document.selectFirst("div.sheader[style*='url'], div.bgholder[style*='url'], div.backdrop[style*='url']")?.attr("style")
         if (!styleAttr.isNullOrBlank()) {
-            val match = Regex("""url(['"]?(.*?)['"]?)""").find(styleAttr)
+            val match = Regex("""url\(['"]?(.*?)['"]?\)""").find(styleAttr)
             val bgUrl = match?.groupValues?.get(1)
             val cleanedBg = cleanImageUrl(bgUrl)
             if (!cleanedBg.isNullOrBlank()) return cleanedBg
@@ -227,6 +225,8 @@ class MLWBDProvider : MainAPI() {
         }
     }
 
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+
     override suspend fun load(url: String): LoadResponse? {
         val document = getDocument(url)
         val title = document.selectFirst("div.data h1, h1.entry-title, h1")?.text()?.trim()
@@ -235,15 +235,13 @@ class MLWBDProvider : MainAPI() {
         val backdropUrl = extractBackdrop(document)
         val plot = document.selectFirst("div.wp-content p, div#info .sinopsis p, .sinopsis, div.entry-content p")?.text()?.trim()
         val yearText = document.selectFirst(".extra span.date, .extra span.country + span, .date")?.text()
-        val year = Regex("""(19dd|20dd)""").find("$yearText $title")?.groupValues?.get(1)?.toIntOrNull()
+        val year = Regex("""\b(19\d\d|20\d\d)\b""").find("$yearText $title")?.groupValues?.get(1)?.toIntOrNull()
 
-        // Extract Item-Specific Genres (Filtered from general site navigation)
         val tags = document.select("div.sheader div.sgenres a, div.data div.sgenres a, div.custom_fields a[href*='/genre/'], .wp-content a[rel='category tag'], div.tags a")
             .map { it.text().trim() }
             .filter { it.isNotBlank() && !it.equals("Movies", ignoreCase = true) && !it.equals("TV Shows", ignoreCase = true) }
             .distinct()
 
-        val rating = document.selectFirst(".dt_rating_vgs, .rating")?.text()?.trim()
         val isAnime = url.contains("/anime/") || tags.any { it.contains("Anime", ignoreCase = true) }
         val targetType = when {
             isAnime -> TvType.Anime
@@ -256,9 +254,9 @@ class MLWBDProvider : MainAPI() {
             val episodes = episodeElements.mapNotNull { ep ->
                 val epHref = ep.selectFirst("a[href]")?.attr("href") ?: return@mapNotNull null
                 val epNum = ep.selectFirst(".numerando")?.text()?.trim() ?: ""
-                val sMatch = Regex("""(d+)s*-s*(d+)""").find(epNum)
-                val season = sMatch?.groupValues?.get(1)?.toIntOrNull()
-                val episode = sMatch?.groupValues?.get(2)?.toIntOrNull()
+                val sMatch = Regex("""(\d+)\s*-\s*(\d+)""").find(epNum)
+                val season = sMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                val episode = sMatch?.groupValues?.get(2)?.toIntOrNull() ?: 1
                 val epTitle = ep.selectFirst(".episodiotitle a, a")?.text()?.trim()
                 val epThumb = extractImageUrl(ep) ?: posterUrl
 
@@ -276,7 +274,6 @@ class MLWBDProvider : MainAPI() {
                 this.plot = plot
                 this.year = year
                 this.tags = tags
-                this.score = Score.from10(rating)
             }
         } else {
             newMovieLoadResponse(title, url, targetType, url) {
@@ -285,7 +282,6 @@ class MLWBDProvider : MainAPI() {
                 this.plot = plot
                 this.year = year
                 this.tags = tags
-                this.score = Score.from10(rating)
             }
         }
     }
@@ -361,7 +357,6 @@ class MLWBDProvider : MainAPI() {
         for (btn in allAnchorTags) {
             val href = btn.attr("href").trim()
             if (href.isBlank() || href.startsWith("#") || href.contains("facebook.com") || href.contains("t.me") || href.contains("telegram")) continue
-            // STRICT FILTER OUT YOUTUBE TRAILERS
             if (href.contains("youtube.com") || href.contains("youtu.be")) continue
 
             val isTarget = targetServerKeywords.any { href.contains(it, ignoreCase = true) } ||
@@ -394,7 +389,7 @@ class MLWBDProvider : MainAPI() {
             else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.endsWith(".m4v") || href.contains(".m3u8")) {
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - Direct",
+                        source = this.name,
                         name = "$name - Direct Stream (${quality.first})",
                         url = href,
                         type = if (href.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
@@ -501,7 +496,7 @@ class MLWBDProvider : MainAPI() {
         val streamUrl = "https://pixeldrain.com/api/file/$id"
         callback.invoke(
             newExtractorLink(
-                source = "$name - PixelDrain",
+                source = this.name,
                 name = "$name - PixelDrain ($qualityName)",
                 url = streamUrl,
                 type = ExtractorLinkType.VIDEO
@@ -596,7 +591,7 @@ class MLWBDProvider : MainAPI() {
             if (href.contains("r2.dev") || href.contains("cloudflare") || href.contains("fastcloud") || href.contains("fastcdn")) {
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - FastCDN",
+                        source = this.name,
                         name = "$name - FastCDN (${quality.first})",
                         url = href,
                         type = ExtractorLinkType.VIDEO
@@ -615,7 +610,7 @@ class MLWBDProvider : MainAPI() {
             else if (href.contains("workers.dev")) {
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - Worker CDN",
+                        source = this.name,
                         name = "$name - Worker CDN (${quality.first})",
                         url = href,
                         type = ExtractorLinkType.VIDEO
@@ -630,7 +625,7 @@ class MLWBDProvider : MainAPI() {
             else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")) {
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - HubCloud",
+                        source = this.name,
                         name = "$name - Direct (${quality.first})",
                         url = href,
                         type = if (href.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
@@ -681,7 +676,7 @@ class MLWBDProvider : MainAPI() {
                 } else if (streamHref.endsWith(".mp4") || streamHref.endsWith(".mkv") || streamHref.contains(".m3u8")) {
                     callback.invoke(
                         newExtractorLink(
-                            source = "$name - GDFlix Direct",
+                            source = this.name,
                             name = "$name - Direct (${quality.first})",
                             url = streamHref,
                             type = if (streamHref.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
