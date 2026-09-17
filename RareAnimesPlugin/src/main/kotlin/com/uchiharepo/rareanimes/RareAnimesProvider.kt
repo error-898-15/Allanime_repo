@@ -18,6 +18,7 @@ class RareAnimesProvider : MainAPI() {
     override var mainUrl = "https://www.rareanimes.mov"
     override var name = "RareAnimes"
     override val hasMainPage = true
+    override val hasQuickSearch = true
     override var lang = "hi"
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(
@@ -47,6 +48,7 @@ class RareAnimesProvider : MainAPI() {
         } else {
             "${request.data}$page/"
         }
+
         val document = app.get(targetUrl, headers = mapOf("User-Agent" to USER_AGENT)).document
         val homeItems = document.select("article.herald-post, article.post").mapNotNull {
             it.toSearchResult()
@@ -84,6 +86,7 @@ class RareAnimesProvider : MainAPI() {
 
         val posterUrl = extractImageUrl(this)
         val isMovie = href.contains("/movies/") || title.contains("Movie", ignoreCase = true)
+
         return if (isMovie) {
             newMovieSearchResponse(title, href, TvType.AnimeMovie) {
                 this.posterUrl = posterUrl
@@ -100,13 +103,11 @@ class RareAnimesProvider : MainAPI() {
         val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim()
             ?: document.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
             ?: "RareAnimes"
-
         val poster = document.selectFirst("meta[property=og:image]")?.attr("content")?.takeIf { it.isNotBlank() }
             ?: extractImageUrl(document.selectFirst(".entry-content, .herald-post-thumbnail"))
 
         val plot = document.selectFirst(".entry-content p, .herald-entry-content p")?.text()?.trim()
         val isMovie = url.contains("/movies/") || title.contains("Movie", ignoreCase = true)
-
         val content = document.selectFirst(".entry-content, .herald-entry-content")
         val episodeList = ArrayList<Episode>()
 
@@ -147,7 +148,6 @@ class RareAnimesProvider : MainAPI() {
 
                 val epHeaderRegex = Regex("""^(?:Episode|Ep\b|\d+\.)\s*(\d+)""", RegexOption.IGNORE_CASE)
                 val epMatch = epHeaderRegex.find(text)
-
                 if (epMatch != null && links.none { it.name.contains("Watch", true) || it.name.contains("Stream", true) }) {
                     flushCurrentEpisode()
                     currentEpNum = epMatch.groupValues[1].toIntOrNull()
@@ -191,15 +191,15 @@ class RareAnimesProvider : MainAPI() {
 
         val tags = document.select(".herald-tags a, .entry-tags a").map { it.text().trim() }
 
-        return if (isMovie && episodeList.size <= 1) {
+        if (isMovie && episodeList.size <= 1) {
             val movieData = episodeList.firstOrNull()?.data ?: EpisodeData(emptyList()).toJson()
-            newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
+            return newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.tags = tags
             }
         } else {
-            newTvSeriesLoadResponse(title, url, TvType.Anime, episodeList) {
+            return newTvSeriesLoadResponse(title, url, TvType.Anime, episodeList) {
                 this.posterUrl = poster
                 this.plot = plot
                 this.tags = tags
@@ -221,6 +221,7 @@ class RareAnimesProvider : MainAPI() {
         }
 
         var loadedAny = false
+
         for (srv in serverList) {
             val serverUrl = srv.url.trim()
             val serverName = srv.name.trim()
@@ -255,6 +256,7 @@ class RareAnimesProvider : MainAPI() {
                 }
             }
         }
+
         return loadedAny
     }
 
@@ -299,6 +301,7 @@ class RareAnimesProvider : MainAPI() {
                     val fullLoc = if (secondLoc.startsWith("/")) "https://codedew.com$secondLoc" else secondLoc
                     return loadExtractor(fullLoc, "https://codedew.com/", subtitleCallback, callback)
                 }
+
                 val doc2 = secondRes.document
                 val dataHref2 = doc2.selectFirst("a[data-href]")?.attr("data-href")
                 if (!dataHref2.isNullOrBlank()) {
@@ -331,10 +334,10 @@ class RareAnimesProvider : MainAPI() {
         var found = false
         try {
             val html = app.get(streambetaUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
-            val jsonRegex = Regex("""let playerSources\s*=\s*(\[[^;]+\]);""")
+            val jsonRegex = Regex("""let playerSources\s*=\\s*(\[[^\]]+\]);""")
             val jsonMatch = jsonRegex.find(html)?.groupValues?.get(1) ?: return false
-
             val sources = parseJson<List<StreamBetaSource>>(jsonMatch)
+
             for (source in sources) {
                 val directUrl = source.url ?: continue
                 val subName = source.name?.takeIf { it.isNotBlank() } ?: "Stream"
@@ -399,17 +402,18 @@ class RareAnimesProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return try {
+        try {
             val html = app.get(multiqualityUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
             val embedSrc = Regex("""<iframe[^>]*src=[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
                 .find(html)?.groupValues?.get(1) ?: return false
-            loadExtractor(embedSrc, "https://codedew.com/", subtitleCallback, callback)
+
+            return loadExtractor(embedSrc, "https://codedew.com/", subtitleCallback, callback)
         } catch (e: Exception) {
-            false
+            return false
         }
     }
 
-    private fun extractPixeldrain(
+    private suspend fun extractPixeldrain(
         url: String,
         displayName: String,
         callback: (ExtractorLink) -> Unit
@@ -429,6 +433,7 @@ class RareAnimesProvider : MainAPI() {
                     url = streamUrl,
                     type = ExtractorLinkType.VIDEO
                 ) {
+                    this.referer = "https://pixeldra.in/"
                     this.headers = mapOf("User-Agent" to USER_AGENT)
                     this.quality = Qualities.P1080.value
                 }
@@ -456,4 +461,4 @@ class RareAnimesProvider : MainAPI() {
     data class EpisodeData(
         @JsonProperty("servers") val servers: List<ServerLink>
     )
-                                             }
+}
