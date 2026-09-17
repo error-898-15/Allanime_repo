@@ -254,7 +254,7 @@ class MLWBDProvider : MainAPI() {
             val episodes = episodeElements.mapNotNull { ep ->
                 val epHref = ep.selectFirst("a[href]")?.attr("href") ?: return@mapNotNull null
                 val epNum = ep.selectFirst(".numerando")?.text()?.trim() ?: ""
-                val sMatch = Regex("""(\d+)\s*-\s*(\d+)""").find(epNum)
+                val sMatch = Regex("""(\d+)\s*-\s*(\\d+)""").find(epNum)
                 val season = sMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
                 val episode = sMatch?.groupValues?.get(2)?.toIntOrNull() ?: 1
                 val epTitle = ep.selectFirst(".episodiotitle a, a")?.text()?.trim()
@@ -532,10 +532,8 @@ class MLWBDProvider : MainAPI() {
                 timeout = 10
             ).document
 
-            // Check page 1 links first
             var extracted = parseHubCloudLinks(doc1, targetUrl, quality, subtitleCallback, callback)
 
-            // Follow Download / Generate link button to Page 2
             val downloadBtn = doc1.selectFirst("a#download, a.btn-success, a.btn-primary, a[href*='hubcloud.php'], a[href*='/download/'], a[href*='/file/'], a[href*='/video/']")
             val nextUrl = downloadBtn?.attr("href") ?: ""
             if (nextUrl.isNotBlank()) {
