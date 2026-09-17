@@ -1,5 +1,6 @@
 package com.uchiharepo.animesalt
 
+import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
@@ -10,6 +11,7 @@ import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 class AnimeSaltProvider : MainAPI() {
@@ -52,6 +54,35 @@ class AnimeSaltProvider : MainAPI() {
         return newHomePageResponse(request.name, home)
     }
 
+    private fun extractImageUrl(element: Element?): String? {
+        if (element == null) return null
+        val img = if (element.tagName() == "img") element else element.selectFirst("img") ?: return null
+        
+        val raw = (
+            img.attr("data-src").ifEmpty {
+                img.attr("data-lazy-src").ifEmpty {
+                    img.attr("srcset").substringBefore(" ").ifEmpty {
+                        img.attr("src")
+                    }
+                }
+            }
+        ).trim()
+
+        if (raw.isBlank() || raw.startsWith("data:image")) return null
+        val cleaned = if (raw.startsWith("//")) "https:$raw" else raw
+        
+        // Filter out site logo/fallback icons
+        if (cleaned.contains("AnimeSalticon", ignoreCase = true) ||
+            cleaned.contains("AnimeSaltLong", ignoreCase = true) ||
+            cleaned.contains("cropped-", ignoreCase = true)
+        ) {
+            return null
+        }
+
+        // Upscale TMDB images to high-quality 500px posters
+        return cleaned.replace("/w185/", "/w500/").replace("/w342/", "/w500/")
+    }
+
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.selectFirst("h2.entry-title, .entry-title")?.text()?.trim()
             ?: this.selectFirst("img")?.attr("alt")?.replace("Image ", "")?.trim()
@@ -60,12 +91,9 @@ class AnimeSaltProvider : MainAPI() {
         val href = this.selectFirst("a.lnk-blk, a")?.attr("href") ?: return null
         if (!href.startsWith("http") || href.contains("/category/") || href.contains("/tag/")) return null
 
-        val posterUrl = this.selectFirst("img")?.let {
-            val src = it.attr("data-src").ifEmpty { it.attr("src") }
-            fixUrl(src)
-        }
-
+        val posterUrl = extractImageUrl(this)
         val isMovie = href.contains("/movies/")
+
         return if (isMovie) {
             newMovieSearchResponse(title, href, TvType.AnimeMovie) {
                 this.posterUrl = posterUrl
@@ -91,13 +119,17 @@ class AnimeSaltProvider : MainAPI() {
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "AnimeSalt"
 
-        val poster = document.selectFirst("meta[property=og:image]")?.attr("content")
-            ?: document.selectFirst(".post-thumbnail img, figure img")?.let {
-                it.attr("data-src").ifEmpty { it.attr("src") }
-            }?.let { fixUrl(it) }
+        // Search for real poster on the page (ignore default site icon)
+        val poster = extractImageUrl(document.selectFirst(".post-thumbnail img, figure img, .poster img"))
+            ?: document.select("img").mapNotNull { extractImageUrl(it) }.firstOrNull { it.contains("tmdb.org") }
+            ?: document.select("img").mapNotNull { extractImageUrl(it) }.firstOrNull()
 
-        val plot = document.selectFirst("meta[property=og:description]")?.attr("content")
-            ?: document.selectFirst(".entry-content p, .description p")?.text()?.trim()
+        // Generate high-resolution backdrop if TMDB poster exists
+        val backdrop = poster?.replace("/w500/", "/w1280/")?.replace("/w185/", "/w1280/")
+
+        val plot = document.selectFirst(".entry-content p, .description p, meta[property='og:description']")?.let {
+            if (it.tagName() == "meta") it.attr("content") else it.text()
+        }?.trim()
 
         val tags = document.select(".genres a, .category a, .tags a, .tag a").map { it.text().trim() }.distinct()
         val year = document.selectFirst(".entry-meta .year, .year")?.text()?.trim()?.toIntOrNull()
@@ -106,6 +138,7 @@ class AnimeSaltProvider : MainAPI() {
         if (isMovie) {
             return newMovieLoadResponse(title, url, TvType.AnimeMovie, url) {
                 this.posterUrl = poster
+                this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.tags = tags
                 this.year = year
@@ -122,10 +155,7 @@ class AnimeSaltProvider : MainAPI() {
                 val epName = el.selectFirst("h2.entry-title, .entry-title")?.text()?.trim()
                     ?: linkEl.text().replace(Regex("First|Latest Dub|View", RegexOption.IGNORE_CASE), "").trim()
 
-                val epThumb = el.selectFirst("img")?.let {
-                    val src = it.attr("data-src").ifEmpty { it.attr("src") }
-                    fixUrl(src)
-                } ?: poster
+                val epThumb = extractImageUrl(el) ?: poster
 
                 // Extract season and episode numbering (e.g., 1x2, S01E02)
                 val match = Regex("""(?:[-_/])(\d+)x(\d+)""").find(epHref)
@@ -156,6 +186,7 @@ class AnimeSaltProvider : MainAPI() {
 
             return newTvSeriesLoadResponse(title, url, TvType.Anime, sortedEpisodes) {
                 this.posterUrl = poster
+                this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.tags = tags
                 this.year = year
@@ -191,13 +222,50 @@ class AnimeSaltProvider : MainAPI() {
         for (rawEmbed in embedUrls.distinct()) {
             val cleanUrl = if (rawEmbed.startsWith("//")) "https:$rawEmbed" else rawEmbed
 
+            // 1. Handle Multi-Language Base64 Player (e.g. multi-lang-plyr/player.php?data=...)
+            if (cleanUrl.contains("multi-lang-plyr/player.php") || cleanUrl.contains("player.php?data=")) {
+                try {
+                    val rawData = cleanUrl.substringAfter("data=").substringBefore("&")
+                    val decodedJson = String(Base64.decode(URLDecoder.decode(rawData, "UTF-8"), Base64.DEFAULT))
+                    val langList = parseJson<List<MultiLangItem>>(decodedJson)
+
+                    for (item in langList) {
+                        val langName = item.language ?: "Multi"
+                        val directLink = item.link ?: continue
+
+                        try {
+                            loadExtractor(directLink, data, subtitleCallback) { extLink ->
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = extLink.source,
+                                        name = "${extLink.name} - $langName Audio",
+                                        url = extLink.url,
+                                        type = extLink.type
+                                    ) {
+                                        this.referer = extLink.referer
+                                        this.headers = extLink.headers
+                                        this.quality = extLink.quality
+                                    }
+                                )
+                                loadedAny = true
+                            }
+                        } catch (e: Exception) {
+                            // Continue to next language stream
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore malformed player parameters
+                }
+            }
+
+            // 2. Handle FirePlayer / AS-CDN Multi-Audio HLS Master Streams
             if (cleanUrl.contains("/video/")) {
                 try {
                     val origin = Regex("""https?://[^/]+""").find(cleanUrl)?.value ?: continue
                     val hash = cleanUrl.substringAfterLast("/video/").substringBefore("?").substringBefore("/")
                     if (hash.isBlank()) continue
 
-                    // 1. Visit original embed page to establish FirePlayer session cookies
+                    // Visit embed page to establish session & extract subtitles
                     val embedRes = app.get(
                         cleanUrl,
                         headers = mapOf(
@@ -207,7 +275,17 @@ class AnimeSaltProvider : MainAPI() {
                     )
                     val cookie = embedRes.headers["set-cookie"]?.split(";")?.firstOrNull() ?: ""
 
-                    // 2. Call getVideo endpoint to obtain legitimate HLS master stream
+                    // Extract embedded subtitle tracks (e.g. playerjsSubtitle = "[English]https://...")
+                    val subMatch = Regex("""playerjsSubtitles*=s*["'][([^]]+)]([^"']+)["']""").find(embedRes.text)
+                    if (subMatch != null) {
+                        val subLang = subMatch.groupValues[1]
+                        val subUrl = subMatch.groupValues[2]
+                        if (subUrl.startsWith("http")) {
+                            subtitleCallback.invoke(SubtitleFile(subLang, subUrl))
+                        }
+                    }
+
+                    // Call getVideo endpoint to obtain legitimate HLS master stream
                     val getVideoUrl = "$origin/player/index.php?data=$hash&do=getVideo"
                     val postHeaders = mutableMapOf(
                         "Referer" to cleanUrl,
@@ -236,7 +314,51 @@ class AnimeSaltProvider : MainAPI() {
 
                     val streamUrl = videoData?.videoSource ?: videoData?.securedLink
                     if (!streamUrl.isNullOrBlank()) {
-                        var m3u8Generated = false
+                        // Fetch master playlist text to identify all embedded audio languages
+                        val m3u8Content = try {
+                            app.get(
+                                streamUrl,
+                                headers = mapOf(
+                                    "Referer" to "$origin/",
+                                    "User-Agent" to USER_AGENT
+                                )
+                            ).text
+                        } catch (e: Exception) {
+                            ""
+                        }
+
+                        // Extract audio languages from #EXT-X-MEDIA:TYPE=AUDIO
+                        val audioLangs = Regex("""#EXT-X-MEDIA:TYPE=AUDIO[^\n]*NAME="([^"]+)"""")
+                            .findAll(m3u8Content)
+                            .map { it.groupValues[1] }
+                            .distinct()
+                            .toList()
+
+                        val langTag = if (audioLangs.isNotEmpty()) {
+                            " [Multi-Audio: ${audioLangs.reversed().joinToString(", ")}]"
+                        } else {
+                            " [Multi-Audio]"
+                        }
+
+                        // CRITICAL: Always emit the Master M3U8 directly so ExoPlayer enables the Audio Track switcher menu
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = "AnimeSalt$langTag (HLS Master - Switch in Player)",
+                                url = streamUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.referer = "$origin/"
+                                this.headers = mapOf(
+                                    "Referer" to "$origin/",
+                                    "User-Agent" to USER_AGENT
+                                )
+                                this.quality = Qualities.Unknown.value
+                            }
+                        )
+                        loadedAny = true
+
+                        // Also generate resolution sub-streams (1080p, 720p, 480p) for slower connections
                         try {
                             M3u8Helper.generateM3u8(
                                 source = this.name,
@@ -246,33 +368,13 @@ class AnimeSaltProvider : MainAPI() {
                                     "Referer" to "$origin/",
                                     "User-Agent" to USER_AGENT
                                 ),
-                                name = "AnimeSalt CDN"
+                                name = "AnimeSalt"
                             ).forEach { link ->
                                 callback.invoke(link)
-                                m3u8Generated = true
                                 loadedAny = true
                             }
                         } catch (e: Exception) {
-                            // Fallback to direct master link
-                        }
-
-                        if (!m3u8Generated) {
-                            callback.invoke(
-                                newExtractorLink(
-                                    source = this.name,
-                                    name = "AnimeSalt CDN (Multi-Audio HLS)",
-                                    url = streamUrl,
-                                    type = ExtractorLinkType.M3U8
-                                ) {
-                                    this.referer = "$origin/"
-                                    this.headers = mapOf(
-                                        "Referer" to "$origin/",
-                                        "User-Agent" to USER_AGENT
-                                    )
-                                    this.quality = Qualities.P1080.value
-                                }
-                            )
-                            loadedAny = true
+                            // Sub-stream generation optional
                         }
                     }
                 } catch (e: Exception) {
@@ -291,10 +393,10 @@ class AnimeSaltProvider : MainAPI() {
         return loadedAny
     }
 
-    private fun fixUrl(url: String?): String? {
-        if (url.isNullOrBlank()) return null
-        return if (url.startsWith("//")) "https:$url" else url
-    }
+    data class MultiLangItem(
+        @JsonProperty("language") val language: String? = null,
+        @JsonProperty("link") val link: String? = null
+    )
 
     data class AnimeSaltVideoResponse(
         @JsonProperty("hls") val hls: Boolean? = null,
@@ -302,4 +404,4 @@ class AnimeSaltProvider : MainAPI() {
         @JsonProperty("securedLink") val securedLink: String? = null,
         @JsonProperty("videoImage") val videoImage: String? = null
     )
-}
+                                               }
