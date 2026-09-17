@@ -19,6 +19,7 @@ class RareAnimesProvider : MainAPI() {
     override val hasMainPage = true
     override var lang = "hi"
     override val hasDownloadSupport = true
+
     override val supportedTypes = setOf(
         TvType.Anime,
         TvType.AnimeMovie,
@@ -28,8 +29,8 @@ class RareAnimesProvider : MainAPI() {
     )
 
     companion object {
-        const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     }
 
     override val mainPage = mainPageOf(
@@ -45,62 +46,57 @@ class RareAnimesProvider : MainAPI() {
         "$mainUrl/?s=Transformers&paged=" to "Transformers"
     )
 
-    override suspend fun getMainPage(
-        page: Int,
-        request: MainPageRequest
-    ): HomePageResponse {
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (request.data.contains("?s=")) {
             "${request.data}$page"
         } else {
             "${request.data}$page/"
         }
-        val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
-        val home = document.select("article.post, article.herald-lay-b, article").mapNotNull {
-            it.toSearchResult()
-        }.distinctBy { it.url }
-        return newHomePageResponse(request.name, home)
-    }
 
-    private fun extractImageUrl(element: Element?): String? {
-        if (element == null) return null
-        val img = if (element.tagName() == "img") element else element.selectFirst("img") ?: return null
-        val raw = (
-            img.attr("data-src").ifEmpty {
-                img.attr("data-lazy-src").ifEmpty {
-                    img.attr("srcset").substringBefore(" ").ifEmpty {
-                        img.attr("src")
-                    }
-                }
-            }
-        ).trim()
+        val document = app.get(
+            url,
+            headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mainUrl/")
+        ).document
 
-        if (raw.isBlank() || raw.startsWith("data:image") || raw.contains("avatar")) return null
-        return if (raw.startsWith("//")) "https:$raw" else raw
+        val items = document.select("article.post, div.post, article.item, div.item, div.entry, article.entry")
+            .mapNotNull { it.toSearchResult() }
+
+        return newHomePageResponse(request.name, items)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val titleEl = this.selectFirst("h2.entry-title a, .entry-title a, h2 a, a[title]")
-        val title = titleEl?.text()?.trim()
-            ?: titleEl?.attr("title")?.trim()
-            ?: this.selectFirst("img")?.attr("alt")?.trim()
+        val titleEl = this.selectFirst("h2.entry-title a, h2.title a, h3.title a, .post-title a, a[rel=bookmark]")
+            ?: this.selectFirst("a[title]")
+            ?: this.selectFirst("a")
             ?: return null
 
-        val href = titleEl.attr("href").ifEmpty {
-            this.selectFirst(".herald-post-thumbnail a, a")?.attr("href")
-        }?.trim() ?: return null
+        val title = titleEl.text().trim().ifBlank { titleEl.attr("title").trim() }
+        if (title.isBlank()) return null
 
-        if (!href.startsWith("http") || href.contains("/category/") || href.contains("/tag/") || href.contains("#")) return null
+        val href = fixUrlNull(titleEl.attr("href")) ?: return null
 
-        val posterUrl = extractImageUrl(this)
-        val isMovie = href.contains("/movie", ignoreCase = true) || title.contains("movie", ignoreCase = true)
+        val imgEl = this.selectFirst("img")
+        val poster = imgEl?.let {
+            val raw = it.attr("data-src").ifBlank {
+                it.attr("data-lazy-src").ifBlank {
+                    it.attr("src")
+                }
+            }
+            if (raw.isNotBlank()) {
+                val cleaned = if (raw.startsWith("//")) "https:$raw" else raw
+                fixUrlNull(cleaned)
+            } else null
+        }
+
+        val isMovie = title.contains("Movie", ignoreCase = true) || href.contains("/category/movies/")
 
         return if (isMovie) {
             newMovieSearchResponse(title, href, TvType.AnimeMovie) {
-                this.posterUrl = posterUrl
+                this.posterUrl = poster
             }
         } else {
-            newTvSeriesSearchResponse(title, href, TvType.Anime) {
-                this.posterUrl = posterUrl
+            newAnimeSearchResponse(title, href, TvType.Anime) {
+                this.posterUrl = poster
             }
         }
     }
@@ -109,136 +105,127 @@ class RareAnimesProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/?s=${URLEncoder.encode(query.trim(), "UTF-8")}"
-        val document = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT)).document
-        return document.select("article.post, article.herald-lay-b, article").mapNotNull {
-            it.toSearchResult()
-        }.distinctBy { it.url }
+        val document = app.get(
+            searchUrl,
+            headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mainUrl/")
+        ).document
+
+        return document.select("article.post, div.post, article.item, div.item, div.entry")
+            .mapNotNull { it.toSearchResult() }
     }
 
-    override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
-        val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "RareAnimes"
+    override suspend fun load(url: String): LoadResponse {
+        val document = app.get(
+            url,
+            headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mainUrl/")
+        ).document
 
-        val poster = extractImageUrl(document.selectFirst(".entry-content img, .herald-post-thumbnail img, figure img"))
-            ?: document.select("img").mapNotNull { extractImageUrl(it) }.firstOrNull()
+        val title = document.selectFirst("h1.entry-title, h1.title, h1")?.text()?.trim()
+            ?: "RareAnimes Item"
 
-        val plot = document.selectFirst(".entry-content p, meta[property='og:description']")?.let {
-            if (it.tagName() == "meta") it.attr("content") else it.text()
-        }?.trim()
+        val poster = document.selectFirst(".featured-image img, .post-thumbnail img, article img")?.let {
+            val raw = it.attr("data-src").ifBlank { it.attr("data-lazy-src").ifBlank { it.attr("src") } }
+            if (raw.isNotBlank()) {
+                val cleaned = if (raw.startsWith("//")) "https:$raw" else raw
+                fixUrlNull(cleaned)
+            } else null
+        }
 
-        val year = Regex("""Release Year:\s*.*?(\d{4})""", RegexOption.IGNORE_CASE)
-            .find(document.text())?.groupValues?.get(1)?.toIntOrNull()
+        val plot = document.selectFirst(".entry-content p, .post-content p, #synopsis")?.text()?.trim()
 
-        val tags = document.select(".entry-content p:contains(Genre), .entry-meta .tag, .entry-tags a").map {
-            it.text().replace(Regex("Genre:|🎭", RegexOption.IGNORE_CASE), "").trim()
-        }.filter { it.isNotBlank() }
+        val episodeNames = mutableMapOf<Int, String>()
+        val episodeServers = mutableMapOf<Int, MutableList<ServerItem>>()
 
-        val contentHtml = document.selectFirst(".entry-content")?.html() ?: document.html()
-        val isMovie = url.contains("/movie", ignoreCase = true) || title.contains("movie", ignoreCase = true)
+        var currentLang = "Hindi"
 
-        val hasEpisodes = contentHtml.contains("Episode", ignoreCase = true) &&
-                (contentHtml.contains("Episode 01", ignoreCase = true) || contentHtml.contains("Episode 1", ignoreCase = true))
+        val contentElements = document.select(".entry-content > *, .post-content > *")
+        var currentEpNum: Int? = null
 
-        if (isMovie && !hasEpisodes) {
-            val servers = extractServersFromHtml(contentHtml)
-            return newMovieLoadResponse(title, url, TvType.AnimeMovie, toJson(EpisodeData(servers))) {
-                this.posterUrl = poster
-                this.plot = plot
-                this.year = year
-                this.tags = tags
-            }
-        } else {
-            val blocks = contentHtml.split(Regex("""<hr\s*/?>""", RegexOption.IGNORE_CASE))
-            val episodeMap = mutableMapOf<Int, MutableList<ServerItem>>()
-            val episodeNames = mutableMapOf<Int, String>()
+        for (elem in contentElements) {
+            val txt = elem.text().trim()
 
-            for (block in blocks) {
-                val epMatch = Regex("""Episode\s+(\d+)(?:\s*[–-]\s*([^<\n]+))?""", RegexOption.IGNORE_CASE).find(block)
-                    ?: continue
-                val epNum = epMatch.groupValues[1].toIntOrNull() ?: continue
-                val rawName = epMatch.groupValues.getOrNull(2)?.trim() ?: ""
-                val cleanName = rawName.replace(Regex("""<[^>]+>"""), "").trim()
+            if (txt.contains("Tamil", ignoreCase = true)) currentLang = "Tamil"
+            else if (txt.contains("Telugu", ignoreCase = true)) currentLang = "Telugu"
+            else if (txt.contains("Hindi", ignoreCase = true)) currentLang = "Hindi"
+            else if (txt.contains("English", ignoreCase = true)) currentLang = "English"
 
-                if (cleanName.isNotBlank() && (!episodeNames.containsKey(epNum) || episodeNames[epNum]?.contains("Untouched", ignoreCase = true) == true)) {
-                    if (!cleanName.contains("Untouched", ignoreCase = true)) {
-                        episodeNames[epNum] = cleanName
-                    }
-                }
-
-                val serversInBlock = extractServersFromHtml(block)
-                if (serversInBlock.isNotEmpty()) {
-                    val list = episodeMap.getOrPut(epNum) { mutableListOf() }
-                    list.addAll(serversInBlock)
+            val epMatch = Regex("""Episode\s*(\d+)""", RegexOption.IGNORE_CASE).find(txt)
+            if (epMatch != null) {
+                currentEpNum = epMatch.groupValues[1].toIntOrNull()
+                if (currentEpNum != null && !episodeNames.containsKey(currentEpNum)) {
+                    episodeNames[currentEpNum] = txt
                 }
             }
 
-            if (episodeMap.isEmpty()) {
-                val singleServers = extractServersFromHtml(contentHtml)
-                if (singleServers.isNotEmpty()) {
-                    return newMovieLoadResponse(title, url, TvType.AnimeMovie, toJson(EpisodeData(singleServers))) {
-                        this.posterUrl = poster
-                        this.plot = plot
-                        this.year = year
-                        this.tags = tags
+            val links = elem.select("a[href]")
+            for (a in links) {
+                val href = a.attr("href").trim()
+                val serverName = a.text().trim().ifBlank { "Stream" }
+
+                if (href.startsWith("http") && !href.contains("rareanimes.mov") && !href.contains("facebook.com") && !href.contains("telegram") && !href.contains("twitter.com")) {
+                    val linkEpMatch = Regex("""(?:Episode|EP|E)\s*(\d+)""", RegexOption.IGNORE_CASE).find(serverName)
+                        ?: Regex("""Episode\s*(\d+)""", RegexOption.IGNORE_CASE).find(txt)
+                    
+                    val targetEp = linkEpMatch?.groupValues?.get(1)?.toIntOrNull() ?: currentEpNum
+
+                    if (targetEp != null) {
+                        if (!episodeServers.containsKey(targetEp)) {
+                            episodeServers[targetEp] = mutableListOf()
+                        }
+                        episodeServers[targetEp]?.add(
+                            ServerItem(lang = currentLang, server = serverName, url = href)
+                        )
                     }
                 }
             }
+        }
 
-            val episodes = episodeMap.map { (epNum, servers) ->
+        if (episodeServers.isNotEmpty()) {
+            val episodes = episodeServers.map { (epNum, servers) ->
                 val epTitle = episodeNames[epNum]?.ifBlank { "Episode $epNum" } ?: "Episode $epNum"
                 newEpisode(toJson(EpisodeData(servers.distinctBy { it.url }))) {
                     this.name = epTitle
                     this.episode = epNum
                     this.posterUrl = poster
                 }
-            }.sortedBy { it.episode ?: 1 }
+            }.sortedBy { it.episode ?: 0 }
 
             return newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
-                this.year = year
-                this.tags = tags
             }
         }
-    }
 
-    private fun extractServersFromHtml(html: String): List<ServerItem> {
-        val servers = mutableListOf<ServerItem>()
-        val pBlocks = Regex("""<p[^>]*>([\s\S]*?)</p>""", RegexOption.IGNORE_CASE).findAll(html).map { it.groupValues[1] }.toList()
-        val checkBlocks = if (pBlocks.isNotEmpty()) pBlocks else listOf(html)
+        val allExternalLinks = document.select(".entry-content a[href], .post-content a[href]")
+            .mapNotNull { a ->
+                val href = a.attr("href").trim()
+                val serverName = a.text().trim().ifBlank { "Player" }
+                if (href.startsWith("http") && !href.contains("rareanimes.mov") && !href.contains("telegram") && !href.contains("facebook.com")) {
+                    ServerItem(lang = currentLang, server = serverName, url = href)
+                } else null
+            }.distinctBy { it.url }
 
-        for (p in checkBlocks) {
-            val lowerP = p.lowercase()
-            val lang = when {
-                lowerP.contains("hindi") -> "Hindi"
-                lowerP.contains("tamil") -> "Tamil"
-                lowerP.contains("telugu") -> "Telugu"
-                lowerP.contains("bengali") -> "Bengali"
-                lowerP.contains("malayalam") -> "Malayalam"
-                lowerP.contains("english") -> "English"
-                lowerP.contains("japanese") -> "Japanese"
-                lowerP.contains("multi audio") || lowerP.contains("dual audio") -> "Multi-Audio"
-                else -> "Hindi"
-            }
-
-            val linkMatches = Regex("""<a[^>]+href=["'](https?://[^"']+)["'][^>]*>([\s\S]*?)</a>""", RegexOption.IGNORE_CASE).findAll(p)
-            for (lm in linkMatches) {
-                val href = lm.groupValues[1].trim()
-                val text = lm.groupValues[2].replace(Regex("""<[^>]+>"""), "").trim()
-                if (href.contains("codedew.com") || href.contains("stream") || href.contains("mega.nz") || href.contains("drive.google")) {
-                    val serverName = when {
-                        text.contains("StreamBeta", ignoreCase = true) -> "StreamBeta"
-                        text.contains("WatchMult", ignoreCase = true) || text.contains("MultiQuality", ignoreCase = true) -> "WatchMultiQuality"
-                        text.contains("DLBeta", ignoreCase = true) -> "DLBeta"
-                        text.contains("Mega", ignoreCase = true) -> "Mega"
-                        text.isNotBlank() -> text
-                        else -> "StreamBeta"
-                    }
-                    servers.add(ServerItem(lang = lang, server = serverName, url = href))
-                }
+        if (allExternalLinks.isNotEmpty()) {
+            val singleServers = allExternalLinks.take(15)
+            return newMovieLoadResponse(title, url, TvType.AnimeMovie, toJson(EpisodeData(singleServers))) {
+                this.posterUrl = poster
+                this.plot = plot
             }
         }
-        return servers.distinctBy { it.url }
+
+        val iframes = document.select(".entry-content iframe[src], .post-content iframe[src], .video-container iframe[src]")
+            .mapNotNull { iframe ->
+                val src = iframe.attr("src").trim()
+                if (src.isNotBlank()) {
+                    val full = if (src.startsWith("//")) "https:$src" else src
+                    ServerItem(lang = "Hindi", server = "Direct Embed", url = full)
+                } else null
+            }
+
+        return newMovieLoadResponse(title, url, TvType.AnimeMovie, toJson(EpisodeData(iframes))) {
+            this.posterUrl = poster
+            this.plot = plot
+        }
     }
 
     override suspend fun loadLinks(
@@ -248,50 +235,78 @@ class RareAnimesProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         var loadedAny = false
+
         val servers = try {
             if (data.startsWith("{")) {
                 parseJson<EpisodeData>(data).servers
             } else {
-                emptyList()
+                listOf(ServerItem("Hindi", "Player", data))
             }
         } catch (e: Exception) {
-            emptyList()
+            listOf(ServerItem("Hindi", "Player", data))
         }
 
-        if (servers.isEmpty()) return false
-
         for (server in servers) {
-            val cleanUrl = server.url.trim()
+            val rawUrl = server.url.trim()
+            val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
-            if (cleanUrl.contains("codedew.com")) {
+            if (cleanUrl.contains("codedew.com/") || cleanUrl.contains("streambeta.xyz/") || cleanUrl.contains("linkstowatch.")) {
                 try {
                     val res = app.get(
                         cleanUrl,
                         headers = mapOf(
-                            "Referer" to "$mainUrl/",
-                            "User-Agent" to USER_AGENT
+                            "User-Agent" to USER_AGENT,
+                            "Referer" to "$mainUrl/"
                         )
                     )
                     val html = res.text
 
-                    val playerSourcesMatch = Regex("""playerSources\s*=\s*(\[[^;]+\])""").find(html)
-                    if (playerSourcesMatch != null) {
-                        val sources = try {
-                            parseJson<List<PlayerSource>>(playerSourcesMatch.groupValues[1])
+                    val fileMatch = Regex("""file:\s*["']([^"']+)["']""").find(html)
+                        ?: Regex("""source:\s*["']([^"']+)["']""").find(html)
+                        ?: Regex("""src:\s*["']([^"']+)["']""").find(html)
+
+                    if (fileMatch != null) {
+                        val streamUrl = fileMatch.groupValues[1].trim()
+                        val isM3u8 = streamUrl.contains(".m3u8")
+
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = "RareAnimes [${server.lang}] - ${server.server}",
+                                url = streamUrl,
+                                type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = cleanUrl
+                                this.headers = mapOf(
+                                    "Referer" to cleanUrl,
+                                    "User-Agent" to USER_AGENT
+                                )
+                                this.quality = Qualities.Unknown.value
+                            }
+                        )
+                        loadedAny = true
+                    }
+
+                    val jsonSourcesMatch = Regex("""sources:\s*(\[[^\]]+\])""").find(html)
+                    if (jsonSourcesMatch != null) {
+                        val sourcesJson = jsonSourcesMatch.groupValues[1]
+                        val parsedSources = try {
+                            parseJson<List<PlayerSource>>(sourcesJson)
                         } catch (e: Exception) {
                             emptyList()
                         }
 
-                        for (src in sources) {
-                            val streamUrl = src.streamUrl ?: src.url ?: continue
-                            val srcName = src.name ?: "Stream"
+                        for (src in parsedSources) {
+                            val streamUrl = src.url ?: src.streamUrl ?: continue
+                            val srcName = src.name ?: server.server
+                            val isM3u8 = streamUrl.contains(".m3u8")
 
                             callback.invoke(
                                 newExtractorLink(
                                     source = this.name,
                                     name = "RareAnimes [${server.lang}] - $srcName",
                                     url = streamUrl,
-                                    type = ExtractorLinkType.VIDEO
+                                    type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                                 ) {
                                     this.referer = "https://codedew.com/"
                                     this.headers = mapOf(
@@ -327,7 +342,7 @@ class RareAnimesProvider : MainAPI() {
                                         }
                                     }
                                 } catch (e: Exception) {
-                                    // optional fallback
+                                    // optional
                                 }
                             }
 
