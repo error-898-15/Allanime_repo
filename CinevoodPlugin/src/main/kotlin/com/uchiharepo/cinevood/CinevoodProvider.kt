@@ -1,7 +1,6 @@
 package com.uchiharepo.cinevood
 
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
@@ -9,7 +8,6 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.net.URI
 import java.net.URLEncoder
 
 class CinevoodProvider : MainAPI() {
@@ -28,44 +26,6 @@ class CinevoodProvider : MainAPI() {
     companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-
-        val MIRROR_DOMAINS = listOf(
-            "https://cinevood.bingo",
-            "https://1cinevood.site",
-            "https://cinevood.net",
-            "https://new1.cinevood.cv"
-        )
-
-        val COMMON_HEADERS = mapOf(
-            "User-Agent" to USER_AGENT,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.9,hi;q=0.8",
-            "Connection" to "keep-alive",
-            "Upgrade-Insecure-Requests" to "1"
-        )
-    }
-
-    private suspend fun getDocument(url: String, referer: String = mainUrl): Document {
-        val headers = COMMON_HEADERS + ("Referer" to referer)
-        return try {
-            val res = app.get(url, headers = headers, timeout = 20)
-            res.document
-        } catch (e: Exception) {
-            val currentDomain = try { URI(url).host } catch (ignored: Exception) { null }
-            var lastErr: Exception = e
-            for (mirror in MIRROR_DOMAINS) {
-                val mirrorHost = try { URI(mirror).host } catch (ignored: Exception) { null }
-                if (currentDomain != null && mirrorHost != null && mirrorHost.equals(currentDomain, ignoreCase = true)) continue
-                val fallbackUrl = if (currentDomain != null) url.replace("https://$currentDomain", mirror) else mirror
-                try {
-                    val res = app.get(fallbackUrl, headers = headers, timeout = 20)
-                    return res.document
-                } catch (err: Exception) {
-                    lastErr = err
-                }
-            }
-            throw lastErr
-        }
     }
 
     override val mainPage = mainPageOf(
@@ -101,7 +61,7 @@ class CinevoodProvider : MainAPI() {
             val base = request.data.removeSuffix("/")
             "$base/page/$page/"
         }
-        val document = getDocument(url)
+        val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val items = document.select("article.latestPost, article.post, article.item").mapNotNull {
             it.toSearchResult()
         }
@@ -148,7 +108,7 @@ class CinevoodProvider : MainAPI() {
         val href = titleEl.attr("abs:href").ifBlank { titleEl.attr("href") }.trim()
         if (href.isBlank()) return null
 
-        if (href.containsAny("/category/", "/tag/", "/page/")) return null
+        if (href.contains("/category/") || href.contains("/tag/") || href.contains("/page/")) return null
 
         val poster = extractImageUrl(this)
 
@@ -166,7 +126,7 @@ class CinevoodProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val searchUrl = "$mainUrl/?s=$encoded"
-        val document = getDocument(searchUrl)
+        val document = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT)).document
         return document.select("article.latestPost, article.post, article.item").mapNotNull {
             it.toSearchResult()
         }
@@ -178,13 +138,14 @@ class CinevoodProvider : MainAPI() {
         val lowerTags = tags.map { it.lowercase() }
         val lowerTitle = title.lowercase()
         val lowerUrl = url.lowercase()
-        return lowerTags.any { it.containsAny("web series", "tv show", "series", "season") } ||
+        val seriesKeywords = listOf("web series", "tv show", "series", "season")
+        return lowerTags.any { tag -> seriesKeywords.any { tag.contains(it) } } ||
                 lowerTitle.contains(Regex("""(?i)(season\s*\d+|s\d{1,2}|episode|complete)""")) ||
-                lowerUrl.containsAny("web-series", "tv-shows", "season")
+                lowerUrl.contains("web-series") || lowerUrl.contains("tv-shows") || lowerUrl.contains("season")
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = getDocument(url)
+        val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val title = document.selectFirst("h1.title.single-title, h1.entry-title, h1")?.text()?.trim() ?: return null
 
         val poster = extractImageUrl(document.selectFirst("div.single_post, .featured-thumbnail, div.thecontent"))
@@ -197,7 +158,30 @@ class CinevoodProvider : MainAPI() {
         val isSeries = isTvSeries(title, url, tags)
 
         return if (isSeries) {
-            val episodes = document.extractEpisodes(url)
+            val headings = document.select("div.thecontent h2, div.thecontent h3, div.thecontent h4, div.thecontent h5")
+                .filter { it.text().contains(Regex("""(?i)(episode|ep\.?\s*\d+|E\d{2}|part)""")) }
+
+            val episodes = if (headings.isEmpty()) {
+                listOf(
+                    newEpisode(url) {
+                        this.name = "Watch / Download"
+                        this.episode = 1
+                        this.season = 1
+                    }
+                )
+            } else {
+                headings.mapIndexed { idx, el ->
+                    val text = el.text().trim()
+                    val epNum = Regex("""\d+""").find(text)?.value?.toIntOrNull() ?: (idx + 1)
+                    val season = Regex("""(?i)season\s*(\\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                    newEpisode(url) {
+                        this.name = text
+                        this.episode = epNum
+                        this.season = season
+                    }
+                }
+            }
+
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
                 this.plot = plot
@@ -214,43 +198,17 @@ class CinevoodProvider : MainAPI() {
         }
     }
 
-    private fun Document.extractEpisodes(pageUrl: String): List<Episode> {
-        val headings = select("div.thecontent h2, div.thecontent h3, div.thecontent h4, div.thecontent h5")
-            .filter { it.text().contains(Regex("""(?i)(episode|ep\.?\s*\d+|E\d{2}|part)""")) }
-
-        if (headings.isEmpty()) {
-            return listOf(
-                newEpisode(pageUrl) {
-                    name = "Watch / Download"
-                    episode = 1
-                    season = 1
-                }
-            )
-        }
-
-        return headings.mapIndexed { idx, el ->
-            val text = el.text().trim()
-            val epNum = Regex("""\d+""").find(text)?.value?.toIntOrNull() ?: (idx + 1)
-            val season = Regex("""(?i)season\s*(\d+)""").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            newEpisode(pageUrl) {
-                name = text
-                episode = epNum
-                this.season = season
-            }
-        }
-    }
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = getDocument(data)
+        val document = app.get(data, headers = mapOf("User-Agent" to USER_AGENT)).document
         var anyFound = false
         val processedUrls = mutableSetOf<String>()
 
-        // 1. EMBEDDED IFRAMES (e.g. vidara.to, streamtape, doodstream)
+        // 1. Embedded IFRAMES
         document.select("div.thecontent iframe").forEach { iframe ->
             val src = iframe.attr("src").trim().ifBlank { iframe.attr("data-src").trim() }
             if (src.isNotBlank() && src.startsWith("http") && !src.contains("youtube.com")) {
@@ -263,14 +221,14 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // 2. OXXFILE & CINEVOOD MAXBUTTONS (Site's Original Server Gateway)
-        val maxButtons = document.select(
+        // 2. Button Links (OxxFile, HubCloud, FastCloud, PixelDrain, GDFlix, etc.)
+        val buttons = document.select(
             "a.maxbutton-oxxfile, a.maxbutton, a.maxbutton-download, " +
             "a[href*=oxxfile], a[href*=oxi.file], a[href*=hubcloud], " +
             "a[href*=fastcloud], a[href*=gdflix], a[href*=pixeldrain]"
         )
 
-        for (btn in maxButtons) {
+        for (btn in buttons) {
             val href = btn.attr("href").trim()
             if (href.isBlank() || href == "#" || href.contains("telegram") || href.contains("t.me")) continue
             if (!processedUrls.add(href)) continue
@@ -279,7 +237,6 @@ class CinevoodProvider : MainAPI() {
             val nextH6 = btn.nextElementSibling()?.takeIf { it.tagName().equals("h6", ignoreCase = true) }?.text() ?: ""
             val quality = determineQuality("$btnText $nextH6")
 
-            // If it is an OxxFile redirect gateway
             if (href.contains("oxxfile") || href.contains("oxi.file")) {
                 val resolved = resolveOxxFile(href)
                 if (!resolved.isNullOrBlank() && processedUrls.add(resolved)) {
@@ -294,7 +251,7 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // 3. ALL ANCHOR TAGS (Scan for Target Server Links across the document)
+        // 3. Scan all anchor tags in content
         val allAnchors = document.select("div.thecontent a[href], .single_post a[href]")
         for (a in allAnchors) {
             val href = a.attr("href").trim()
@@ -320,22 +277,22 @@ class CinevoodProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Server A: HubCloud / FastCloud / Vifix / DriveBuzz
+        // HubCloud / FastCloud / Vifix / DriveBuzz
         if (url.contains("hubcloud") || url.contains("vifix.site") || url.contains("fastcloud") || url.contains("drivebuzz")) {
             return extractHubCloud(url, quality, subtitleCallback, callback)
         }
 
-        // Server B: PixelDrain Direct Stream
+        // PixelDrain
         if (url.contains("pixeldrain.com")) {
             return emitPixelDrain(url, quality.first, quality.second, callback)
         }
 
-        // Server C: GDFlix / FastDrive / DriveSeed / DriveLinks
+        // GDFlix / FastDrive / DriveSeed
         if (url.contains("gdflix") || url.contains("fastdrive") || url.contains("driveseed") || url.contains("drivelinks")) {
             return extractGDFlix(url, quality, subtitleCallback, callback)
         }
 
-        // Server D: Direct Video Files
+        // Direct Video Files
         if (url.endsWith(".mp4") || url.endsWith(".mkv") || url.endsWith(".m4v") || url.contains(".m3u8")) {
             callback.invoke(
                 newExtractorLink(
@@ -346,13 +303,12 @@ class CinevoodProvider : MainAPI() {
                 ) {
                     this.referer = refererUrl
                     this.quality = quality.second
-                    this.headers = mapOf("User-Agent" to USER_AGENT)
                 }
             )
             return true
         }
 
-        // Server E: CloudStream Generic Hosters (Streamtape, Vidara, Dood, GoFile, FileLions, KrakenFiles, BuzzHeavier)
+        // Generic Hosters
         return try {
             loadExtractor(url, refererUrl, subtitleCallback, callback)
             true
@@ -366,14 +322,11 @@ class CinevoodProvider : MainAPI() {
             val response = app.get(
                 url,
                 allowRedirects = true,
-                timeout = 15,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to mainUrl
-                )
+                headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl)
             )
             val finalUrl = response.url
-            if (finalUrl.containsAny(".mkv", ".mp4", "streamtape", "dood", "vidnest", "filelions", "hubcloud", "vidara", "fastcloud")) {
+            val checkKeywords = listOf(".mkv", ".mp4", "streamtape", "dood", "vidnest", "filelions", "hubcloud", "vidara", "fastcloud")
+            if (checkKeywords.any { finalUrl.contains(it, ignoreCase = true) }) {
                 return@runCatching finalUrl
             }
 
@@ -393,14 +346,14 @@ class CinevoodProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
-            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl), timeout = 12).document
+            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl)).document
             var extracted = parseHubCloudLinks(doc, url, quality, subtitleCallback, callback)
 
             if (!extracted) {
                 val landingBtn = doc.selectFirst("a#download, a.btn-download, a:contains(Download), a:contains(Generate)")
                 val nextUrl = landingBtn?.attr("href")?.trim()
                 if (!nextUrl.isNullOrBlank() && nextUrl.startsWith("http")) {
-                    val stepDoc = app.get(nextUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to url), timeout = 12).document
+                    val stepDoc = app.get(nextUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to url)).document
                     extracted = parseHubCloudLinks(stepDoc, nextUrl, quality, subtitleCallback, callback)
                 }
             }
@@ -423,7 +376,6 @@ class CinevoodProvider : MainAPI() {
             val href = link.attr("href").trim()
             if (href.isBlank() || href.startsWith("#") || href.contains("youtube.com") || href.contains("youtu.be")) continue
 
-            // 1. FastCDN / Cloudflare R2 / FastCloud
             if (href.contains("r2.dev") || href.contains("cloudflare") || href.contains("fastcloud") || href.contains("fastcdn")) {
                 callback.invoke(
                     newExtractorLink(
@@ -437,13 +389,9 @@ class CinevoodProvider : MainAPI() {
                     }
                 )
                 found = true
-            }
-            // 2. PixelDrain Direct API Stream
-            else if (href.contains("pixeldrain.com")) {
+            } else if (href.contains("pixeldrain.com")) {
                 if (emitPixelDrain(href, quality.first, quality.second, callback)) found = true
-            }
-            // 3. Worker CDN
-            else if (href.contains("workers.dev")) {
+            } else if (href.contains("workers.dev")) {
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
@@ -456,9 +404,7 @@ class CinevoodProvider : MainAPI() {
                     }
                 )
                 found = true
-            }
-            // 4. Direct Video Files
-            else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")) {
+            } else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")) {
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
@@ -471,9 +417,7 @@ class CinevoodProvider : MainAPI() {
                     }
                 )
                 found = true
-            }
-            // 5. External Host Extractors
-            else if (href.contains("gofile.io") || href.contains("streamtape") || href.contains("vidhide") || href.contains("buzzheavier") || href.contains("krakenfiles")) {
+            } else if (href.contains("gofile.io") || href.contains("streamtape") || href.contains("vidhide") || href.contains("buzzheavier") || href.contains("krakenfiles")) {
                 try {
                     loadExtractor(href, refererUrl, subtitleCallback, callback)
                     found = true
@@ -490,7 +434,7 @@ class CinevoodProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return try {
-            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl), timeout = 10).document
+            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mainUrl)).document
             var extracted = false
             val links = doc.select("a[href]")
             for (link in links) {
@@ -539,7 +483,6 @@ class CinevoodProvider : MainAPI() {
                 ) {
                     this.referer = "https://pixeldrain.com/"
                     this.quality = qualityValue
-                    this.headers = mapOf("User-Agent" to USER_AGENT)
                 }
             )
             true
@@ -556,9 +499,5 @@ class CinevoodProvider : MainAPI() {
             lower.contains("360") -> Pair("360p", Qualities.P360.value)
             else -> Pair("HD", Qualities.P720.value)
         }
-    }
-
-    private fun String.containsAny(vararg tokens: String): Boolean {
-        return tokens.any { this.contains(it, ignoreCase = true) }
     }
 }
