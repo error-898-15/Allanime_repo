@@ -1,4 +1,4 @@
-version = 3
+version = 4
 
 cloudstream {
     description = "RareAnimes - Watch Hindi, Tamil, Telugu Dubbed Anime, Cartoons & Movies with StreamBeta, Mega & MultiQuality CDN"
