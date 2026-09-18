@@ -20,6 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -91,6 +92,10 @@ jobs:
               'CineVoodPlugin': {
                   'name': 'CineVood',
                   'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
+              },
+              'FlixVisionPlugin': {
+                  'name': 'Flix Vision',
+                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png'
               }
           }
           cs3_hashes = {}
