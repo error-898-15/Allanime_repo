@@ -11,10 +11,8 @@ import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import java.net.URI
 import java.net.URLEncoder
 
 class RareAnimesProvider : MainAPI() {
@@ -54,12 +52,7 @@ class RareAnimesProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val url = if (page <= 1) {
-            val base = request.data.removeSuffix("page/")
-            if (base.endsWith("/")) base else "$base/"
-        } else {
-            "${request.data}$page/"
-        }
+        val url = "${request.data}$page/"
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val home = document.select("article.post, .herald-lay-b, .herald-lay-a").mapNotNull {
             it.toSearchResult()
@@ -86,7 +79,7 @@ class RareAnimesProvider : MainAPI() {
         ) {
             return null
         }
-        return cleaned.replace(Regex("""-\d+x\d+\.(jpg|jpeg|png|webp)""", RegexOption.IGNORE_CASE), ".$1")
+        return cleaned
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
@@ -102,26 +95,12 @@ class RareAnimesProvider : MainAPI() {
             href.contains("/movies/", ignoreCase = true) ||
             title.contains("Movie", ignoreCase = true)
 
-        val isCartoon = href.contains("/cartoon-series/", ignoreCase = true) ||
-            title.contains("Ben 10", ignoreCase = true) ||
-            title.contains("Oggy", ignoreCase = true) ||
-            title.contains("Doraemon", ignoreCase = true) ||
-            title.contains("Shinchan", ignoreCase = true) ||
-            title.contains("Roll No 21", ignoreCase = true) ||
-            title.contains("Chhota Bheem", ignoreCase = true)
-
-        val tvType = when {
-            isMovie -> TvType.AnimeMovie
-            isCartoon -> TvType.Cartoon
-            else -> TvType.Anime
-        }
-
         return if (isMovie) {
-            newMovieSearchResponse(title, href, tvType) {
+            newMovieSearchResponse(title, href, TvType.AnimeMovie) {
                 this.posterUrl = posterUrl
             }
         } else {
-            newTvSeriesSearchResponse(title, href, tvType) {
+            newTvSeriesSearchResponse(title, href, TvType.Anime) {
                 this.posterUrl = posterUrl
             }
         }
@@ -150,23 +129,21 @@ class RareAnimesProvider : MainAPI() {
         val yearMatch = Regex("""\b(19\d\d|20\d\d)\b""").find(title)
         val year = yearMatch?.groupValues?.get(1)?.toIntOrNull()
 
-        val contentEl = document.selectFirst(".entry-content, .herald-entry-content, article .entry-content")
-        val contentHtml = contentEl?.html() ?: document.html()
+        val contentHtml = document.selectFirst(".entry-content")?.html() ?: document.html()
+        val episodes = parseEpisodes(document, contentHtml, url, poster)
 
-        val episodes = parseEpisodes(document, contentHtml, contentEl, url, poster)
-
-        val isMovie = (episodes.isEmpty() && document.select("a[href*='codedew.com'], a[href*='hubcloud'], a[href*='drive.google'], a[href*='pixeldrain']").isNotEmpty()) ||
+        val isMovie = (episodes.isEmpty() && document.select("a[href*='codedew.com']").isNotEmpty()) ||
             url.contains("-movie-", ignoreCase = true) ||
             title.contains("Movie", ignoreCase = true)
 
         if (isMovie && episodes.isEmpty()) {
-            val movieLinks = (contentEl ?: document).select("a[href*='codedew.com'], a[href*='hubcloud'], a[href*='drive.google'], a[href*='pixeldrain'], a[href*='mega.nz'], a[href*='streamwish'], a[href*='filepress'], a[href*='droplink']").mapNotNull { a ->
+            val movieServers = document.select("a[href*='codedew.com']").mapNotNull { a ->
                 val link = a.attr("href").trim()
-                val label = a.text().trim().ifEmpty { a.parent()?.text()?.trim() ?: "Stream" }
-                if (link.isNotBlank() && !link.contains("/category/") && !link.contains("/tag/")) ServerLink(label, link) else null
-            }.distinctBy { it.url }.sortedBy { serverPriority(it.name) }
+                val label = a.text().trim().ifEmpty { "Stream" }
+                if (link.isNotBlank()) ServerLink(label, link) else null
+            }.sortedBy { serverPriority(it.name) }
 
-            val movieData = RareAnimesEpisodeData(url, movieLinks).toJson()
+            val movieData = RareAnimesEpisodeData(url, movieServers).toJson()
             return newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = poster
@@ -176,17 +153,7 @@ class RareAnimesProvider : MainAPI() {
             }
         }
 
-        val isCartoon = url.contains("/cartoon-series/", ignoreCase = true) ||
-            title.contains("Ben 10", ignoreCase = true) ||
-            title.contains("Oggy", ignoreCase = true) ||
-            title.contains("Doraemon", ignoreCase = true) ||
-            title.contains("Shinchan", ignoreCase = true) ||
-            title.contains("Roll No 21", ignoreCase = true) ||
-            title.contains("Chhota Bheem", ignoreCase = true)
-
-        val tvType = if (isCartoon) TvType.Cartoon else TvType.Anime
-
-        return newTvSeriesLoadResponse(title, url, tvType, episodes) {
+        return newTvSeriesLoadResponse(title, url, TvType.Anime, episodes) {
             this.posterUrl = poster
             this.backgroundPosterUrl = poster
             this.plot = plot
@@ -198,14 +165,12 @@ class RareAnimesProvider : MainAPI() {
     private fun serverPriority(name: String): Int {
         val s = name.lowercase()
         return when {
-            s.contains("streambeta") || s.contains("stream-beta") -> 0
+            s.contains("streambeta") -> 0
             s.contains("pixeldrain") || s.contains("pixel") -> 1
-            s.contains("fastcdn") || s.contains("fastcloud") || s.contains("hubcloud") -> 2
-            s.contains("gdrive") || s.contains("google") -> 3
-            s.contains("multiquality") || s.contains("multquality") || s.contains("backup hls") -> 4
-            s.contains("mega") -> 5
-            s.contains("dlbeta") -> 6
-            s.contains("streamwish") || s.contains("vidhide") || s.contains("streamtape") -> 7
+            s.contains("gdrive") || s.contains("google") -> 2
+            s.contains("mega") -> 3
+            s.contains("dlbeta") -> 4
+            s.contains("multiquality") || s.contains("multquality") -> 99
             else -> 10
         }
     }
@@ -213,15 +178,13 @@ class RareAnimesProvider : MainAPI() {
     private suspend fun parseEpisodes(
         document: Document,
         contentHtml: String,
-        contentEl: Element?,
         postUrl: String,
         fallbackThumb: String?
     ): List<Episode> {
         val episodes = ArrayList<Episode>()
-        val root = contentEl ?: document
 
-        // 1. Check for intermediate archive links
-        val archiveLinks = root.select("a[href*='/archives/'], a[href*='store.animetoonhindi.com'], a[href*='animetoonhindi.com']").mapNotNull { a ->
+        // 1. Check if post has intermediate archive links (e.g., store.animetoonhindi.com/archives/... for cartoons)
+        val archiveLinks = document.select("a[href*='/archives/'], a[href*='store.animetoonhindi.com'], a[href*='animetoonhindi.com']").mapNotNull { a ->
             val href = a.attr("href").trim()
             if (href.startsWith("http") && (href.contains("archives") || href.contains("store."))) href else null
         }.distinct()
@@ -230,15 +193,14 @@ class RareAnimesProvider : MainAPI() {
             for (archUrl in archiveLinks) {
                 try {
                     val archDoc = app.get(archUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to postUrl)).document
-                    val archLinks = archDoc.select("a[href*='codedew.com'], a[href*='hubcloud'], a[href*='pixeldrain'], a[href*='drive.google'], a[href*='mega.nz'], a[href*='streamwish'], a[href*='filepress'], a[href*='droplink']")
+                    val archLinks = archDoc.select("a[href*='codedew.com']")
                     for (a in archLinks) {
                         val sUrl = a.attr("href").trim()
                         val text = a.text().trim()
-                        val parentText = a.parent()?.text()?.trim() ?: ""
-                        val fullText = "$text $parentText"
                         if (sUrl.isBlank()) continue
 
-                        val epMatch = Regex("""(?:Episode|Ep\.?|E)\s*0*(\d+)""", RegexOption.IGNORE_CASE).find(fullText)
+                        // Extract episode number from text e.g., "Oggy S01E01" or "Episode 01"
+                        val epMatch = Regex("""(?:Episode|Ep\.?|E)\s*0*(\d+)""", RegexOption.IGNORE_CASE).find(text)
                         val epNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: (episodes.size + 1)
                         val epTitle = text.ifEmpty { "Episode $epNum" }
 
@@ -248,7 +210,9 @@ class RareAnimesProvider : MainAPI() {
                                 val curData = parseJson<RareAnimesEpisodeData>(existing.data)
                                 val updatedServers = (curData.servers + ServerLink(epTitle, sUrl)).distinctBy { it.url }
                                 existing.data = RareAnimesEpisodeData(archUrl, updatedServers.sortedBy { serverPriority(it.name) }).toJson()
-                            } catch (e: Exception) { }
+                            } catch (e: Exception) {
+                                // ignore
+                            }
                         } else {
                             val epData = RareAnimesEpisodeData(archUrl, listOf(ServerLink(epTitle, sUrl))).toJson()
                             episodes.add(
@@ -260,7 +224,9 @@ class RareAnimesProvider : MainAPI() {
                             )
                         }
                     }
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    // ignore archive fetch failure
+                }
             }
             if (episodes.isNotEmpty()) {
                 return episodes.sortedBy { it.episode ?: 0 }
@@ -280,7 +246,7 @@ class RareAnimesProvider : MainAPI() {
             val rawEpTitle = epMatch.groupValues.getOrNull(2)?.trim()?.replace(Regex("""<[^>]+>"""), "")?.trim()
 
             val linkMatches = Regex(
-                """<a\s+[^>]*href=["'](https?://(?:codedew\.com|hubcloud|pixeldrain|drive\.google|mega\.nz|streamwish|filepress)[^"']+)["'][^>]*>([\s\S]*?)</a>""",
+                """<a\s+[^>]*href=["'](https?://codedew\.com/[^"']+)["'][^>]*>([\s\S]*?)</a>""",
                 RegexOption.IGNORE_CASE
             ).findAll(section)
 
@@ -312,41 +278,28 @@ class RareAnimesProvider : MainAPI() {
             }
         }
 
-        // 3. Fallback: Parse direct episode links
+        // 3. Fallback: Direct episode link parsing
         if (episodes.isEmpty()) {
-            val allServerLinks = root.select("a[href*='codedew.com'], a[href*='hubcloud'], a[href*='pixeldrain'], a[href*='drive.google'], a[href*='mega.nz'], a[href*='streamwish'], a[href*='filepress']")
-            for ((idx, a) in allServerLinks.withIndex()) {
+            val allCodedew = document.select("a[href*='codedew.com']")
+            for ((idx, a) in allCodedew.withIndex()) {
                 val link = a.attr("href").trim()
                 val text = a.text().trim()
-                val parentText = a.parent()?.text()?.trim() ?: ""
-                val fullText = "$text $parentText"
-                if (link.isBlank() || link.contains("/category/") || link.contains("/tag/") || link == mainUrl) continue
-
-                val epMatch = Regex("""(?:Episode|Ep\.?|E)\s*0*(\d+)""", RegexOption.IGNORE_CASE).find(fullText)
+                val epMatch = Regex("""(?:Episode|Ep\.?|E)\s*0*(\d+)""", RegexOption.IGNORE_CASE).find(text)
                 val epNum = epMatch?.groupValues?.get(1)?.toIntOrNull() ?: (idx + 1)
                 val label = text.ifEmpty { "Episode $epNum" }
 
-                val existing = episodes.find { it.episode == epNum }
-                if (existing != null) {
-                    try {
-                        val curData = parseJson<RareAnimesEpisodeData>(existing.data)
-                        val updatedServers = (curData.servers + ServerLink(label, link)).distinctBy { it.url }
-                        existing.data = RareAnimesEpisodeData(postUrl, updatedServers.sortedBy { serverPriority(it.name) }).toJson()
-                    } catch (e: Exception) { }
-                } else {
-                    val epData = RareAnimesEpisodeData(postUrl, listOf(ServerLink(label, link))).toJson()
-                    episodes.add(
-                        newEpisode(epData) {
-                            this.name = label
-                            this.episode = epNum
-                            this.posterUrl = fallbackThumb
-                        }
-                    )
-                }
+                val epData = RareAnimesEpisodeData(postUrl, listOf(ServerLink(label, link))).toJson()
+                episodes.add(
+                    newEpisode(epData) {
+                        this.name = label
+                        this.episode = epNum
+                        this.posterUrl = fallbackThumb
+                    }
+                )
             }
         }
 
-        return episodes.distinctBy { it.episode }.sortedBy { it.episode ?: 0 }
+        return episodes.distinctBy { it.episode }
     }
 
     override suspend fun loadLinks(
@@ -371,43 +324,39 @@ class RareAnimesProvider : MainAPI() {
                 val sName = server.name
                 val sUrl = server.url
                 when {
-                    sName.contains("StreamBeta", ignoreCase = true) || sUrl.contains("codedew.com") -> {
-                        if (extractCodedewAndStreamBeta(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
+                    sName.contains("StreamBeta", ignoreCase = true) -> {
+                        if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
                     }
-                    sName.contains("Mega", ignoreCase = true) || sUrl.contains("mega.nz") -> {
+                    sName.contains("Mega", ignoreCase = true) -> {
                         if (extractMega(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
                     }
                     sName.contains("DLBeta", ignoreCase = true) -> {
                         if (extractDLBeta(sUrl, postUrl, callback)) loadedAny = true
                     }
-                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) || sName.contains("Backup HLS", ignoreCase = true) -> {
+                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) -> {
                         if (extractMultiQuality(sUrl, postUrl, callback)) loadedAny = true
                     }
-                    sUrl.contains("pixeldrain.com") || sUrl.contains("pixeldra.in") -> {
-                        if (extractPixelDrainDirect(sUrl, sName, callback)) loadedAny = true
-                    }
-                    sUrl.contains("hubcloud") || sUrl.contains("fastcloud") -> {
-                        if (extractHubCloud(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
-                    }
                     else -> {
-                        if (extractCodedewAndStreamBeta(sUrl, postUrl, subtitleCallback, callback)) {
-                            loadedAny = true
-                        } else if (extractMultiQuality(sUrl, postUrl, callback)) {
+                        if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) {
                             loadedAny = true
                         } else if (extractMega(sUrl, postUrl, subtitleCallback, callback)) {
                             loadedAny = true
                         } else if (loadExtractor(sUrl, postUrl, subtitleCallback, callback)) {
                             loadedAny = true
+                        } else if (extractMultiQuality(sUrl, postUrl, callback)) {
+                            loadedAny = true
                         }
                     }
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                // Continue to next server gracefully
+            }
         }
 
         return loadedAny
     }
 
-    private suspend fun extractCodedewAndStreamBeta(
+    private suspend fun extractStreamBeta(
         zipperUrl: String,
         postUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
@@ -423,153 +372,16 @@ class RareAnimesProvider : MainAPI() {
         )
         var html = streamBetaPage.text
 
-        if (!html.contains("playerSources") && (html.contains("ad_done=1") || html.contains("verification"))) {
-            val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else if (zipperUrl.contains("?")) "$zipperUrl&ad_done=1" else "$zipperUrl?ad_done=1"
-            try {
-                html = app.get(
-                    targetUrl,
-                    headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://codedew.com/")
-                ).text
-            } catch (e: Exception) { }
+        // If intermediate countdown page
+        if (!html.contains("playerSources") && html.contains("ad_done=1")) {
+            val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else "$zipperUrl&ad_done=1"
+            html = app.get(
+                targetUrl,
+                headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://codedew.com/")
+            ).text
         }
 
-        val iframeMatch = Regex("""https?://argon\.razorshell\.space/embed/[A-Za-z0-9]+""").find(html)
-        if (iframeMatch != null) {
-            if (extractMultiQuality(iframeMatch.value, "https://codedew.com/", callback)) {
-                success = true
-            }
-        }
-
-        val otherIframes = Regex("""<iframe[^>]+src=["']([^"']+)["']""").findAll(html)
-        for (ifm in otherIframes) {
-            val src = ifm.groupValues[1].trim()
-            if (src.contains("argon.razorshell.space")) continue
-            if (src.contains("mega.nz")) {
-                if (loadExtractor(src, zipperUrl, subtitleCallback, callback)) success = true
-            } else {
-                try {
-                    if (loadExtractor(src, zipperUrl, subtitleCallback, callback)) success = true
-                } catch (e: Exception) { }
-            }
-        }
-
-        val jsonMatch = Regex("""let\s+playerSources\s*=\s*(\[[^;]+\]);""").find(html)
-            ?: Regex("""var\s+playerSources\s*=\s*(\[[^;]+\]);""").find(html)
-            ?: Regex("""sources\s*:\s*(\[[^;\]]+\])""").find(html)
-
-        if (jsonMatch != null) {
-            val sources = try {
-                parseJson<List<StreamBetaSource>>(jsonMatch.groupValues[1])
-            } catch (e: Exception) {
-                null
-            }
-
-            if (sources != null) {
-                for (src in sources) {
-                    val sourceName = src.name ?: "StreamBeta"
-                    val rawStream = src.streamUrl
-                    val rawDirect = src.url
-
-                    val payloadStream = decodeWorkerPayload(rawStream)
-                    val payloadDirect = decodeWorkerPayload(rawDirect)
-
-                    val resolvedTarget = payloadStream ?: payloadDirect ?: rawDirect ?: rawStream ?: continue
-
-                    if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true) || resolvedTarget.contains("drive.google.com", ignoreCase = true)) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "$name - Google Drive ($sourceName)",
-                                url = resolvedTarget,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = "https://drive.google.com/"
-                                this.headers = mapOf("User-Agent" to USER_AGENT)
-                                this.quality = Qualities.P1080.value
-                            }
-                        )
-                        success = true
-                    } else if (resolvedTarget.contains("pixeldra.in", ignoreCase = true) || resolvedTarget.contains("pixeldrain.com", ignoreCase = true)) {
-                        val fileId = resolvedTarget.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
-                        if (fileId.isNotBlank()) {
-                            val directDownload = "https://pixeldrain.com/api/file/$fileId?download"
-                            callback.invoke(
-                                newExtractorLink(
-                                    source = this.name,
-                                    name = "$name - PixelDrain ($sourceName)",
-                                    url = directDownload,
-                                    type = ExtractorLinkType.VIDEO
-                                ) {
-                                    this.referer = "https://pixeldrain.com/"
-                                    this.headers = mapOf(
-                                        "User-Agent" to USER_AGENT,
-                                        "Referer" to "https://pixeldrain.com/"
-                                    )
-                                    this.quality = Qualities.P1080.value
-                                }
-                            )
-                            loadExtractor("https://pixeldrain.com/u/$fileId", "https://pixeldrain.com/", subtitleCallback, callback)
-                            success = true
-                        }
-                    } else if (resolvedTarget.contains("r2.dev", ignoreCase = true) || resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true) || resolvedTarget.contains("workers.dev", ignoreCase = true)) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "$name - Fast Cloud ($sourceName)",
-                                url = resolvedTarget,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = ""
-                                this.headers = mapOf("User-Agent" to USER_AGENT)
-                                this.quality = Qualities.P1080.value
-                            }
-                        )
-                        success = true
-                    } else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "$name - Direct Video ($sourceName)",
-                                url = resolvedTarget,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = ""
-                                this.headers = mapOf("User-Agent" to USER_AGENT)
-                                this.quality = Qualities.P1080.value
-                            }
-                        )
-                        success = true
-                    } else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "$name - HLS Stream ($sourceName)",
-                                url = resolvedTarget,
-                                type = ExtractorLinkType.M3U8
-                            ) {
-                                this.referer = ""
-                                this.quality = Qualities.P1080.value
-                            }
-                        )
-                        try {
-                            M3u8Helper.generateM3u8(
-                                source = this.name,
-                                streamUrl = resolvedTarget,
-                                referer = "",
-                                quality = Qualities.P1080.value,
-                                name = "$name - HLS Stream ($sourceName)"
-                            ).forEach { link ->
-                                callback.invoke(link)
-                            }
-                        } catch (t: Throwable) { }
-                        success = true
-                    } else if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
-                        success = true
-                    }
-                }
-            }
-        }
-
+        // Check for Mega link
         val megaMatch = Regex("""https?://mega\.nz/(?:file|embed)/[^\s"'<>]+""").find(html)
         if (megaMatch != null) {
             if (loadExtractor(megaMatch.value, postUrl, subtitleCallback, callback)) {
@@ -577,69 +389,142 @@ class RareAnimesProvider : MainAPI() {
             }
         }
 
-        return success
-    }
-
-    private fun extractPixelDrainDirect(url: String, sourceName: String, callback: (ExtractorLink) -> Unit): Boolean {
-        val fileId = url.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
-        if (fileId.isNotBlank()) {
-            val directDownload = "https://pixeldrain.com/api/file/$fileId?download"
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = "$name - PixelDrain ($sourceName)",
-                    url = directDownload,
-                    type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = "https://pixeldrain.com/"
-                    this.headers = mapOf(
-                        "User-Agent" to USER_AGENT,
-                        "Referer" to "https://pixeldrain.com/"
-                    )
-                    this.quality = Qualities.P1080.value
-                }
-            )
-            return true
+        val jsonMatch = Regex("""let\s+playerSources\s*=\s*(\[[^;]+\]);""").find(html) ?: return success
+        val sources = try {
+            parseJson<List<StreamBetaSource>>(jsonMatch.groupValues[1])
+        } catch (e: Exception) {
+            return success
         }
-        return false
-    }
 
-    private suspend fun extractHubCloud(
-        url: String,
-        refererUrl: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        return try {
-            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to refererUrl)).document
-            var found = false
-            for (a in doc.select("a[href]")) {
-                val href = a.attr("href").trim()
-                if (href.contains("pixeldrain.com")) {
-                    if (extractPixelDrainDirect(href, "HubCloud", callback)) found = true
-                } else if (href.contains("r2.dev") || href.contains("cloudflare") || href.contains("fastcloud")) {
+        for (src in sources) {
+            val sourceName = src.name ?: "StreamBeta"
+            val rawStream = src.streamUrl
+            val rawDirect = src.url
+
+            val payloadStream = decodeWorkerPayload(rawStream)
+            val payloadDirect = decodeWorkerPayload(rawDirect)
+
+            val resolvedTarget = payloadStream ?: payloadDirect ?: rawDirect ?: rawStream ?: continue
+
+            // 1. Google Drive / Google UserContent stream (High Priority FHD) - NO codedew Referer to avoid 403 (Error 2004)
+            if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Google Drive ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://drive.google.com/"
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT
+                        )
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 2. Pixeldrain Direct High-Speed API & Native Extractor
+            else if (resolvedTarget.contains("pixeldra.in", ignoreCase = true)) {
+                val fileId = resolvedTarget.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
+                if (fileId.isNotBlank()) {
+                    val directDownload = "https://pixeldra.in/api/file/$fileId?download"
                     callback.invoke(
                         newExtractorLink(
                             source = this.name,
-                            name = "$name - FastCloud Direct (1080p)",
-                            url = href,
+                            name = "$name - Pixeldrain ($sourceName)",
+                            url = directDownload,
                             type = ExtractorLinkType.VIDEO
                         ) {
-                            this.referer = url
+                            this.referer = "https://pixeldra.in/"
+                            this.headers = mapOf(
+                                "User-Agent" to USER_AGENT,
+                                "Referer" to "https://pixeldra.in/"
+                            )
                             this.quality = Qualities.P1080.value
                         }
                     )
-                    found = true
-                } else {
-                    try {
-                        if (loadExtractor(href, url, subtitleCallback, callback)) found = true
-                    } catch (e: Exception) { }
+                    loadExtractor("https://pixeldra.in/u/$fileId", "https://pixeldra.in/", subtitleCallback, callback)
+                    success = true
                 }
             }
-            found
-        } catch (e: Exception) {
-            false
+            // 3. Cloudflare R2 / Cloud Storage Direct Video
+            else if (resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Cloud Storage ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = ""
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT
+                        )
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 4. Mega link
+            else if (resolvedTarget.contains("mega.nz", ignoreCase = true)) {
+                if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
+                    success = true
+                }
+            }
+            // 5. Direct MP4 / MKV Video
+            else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Direct Video ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = ""
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT
+                        )
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 6. HLS m3u8 stream
+            else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - HLS Stream ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = ""
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                try {
+                    M3u8Helper.generateM3u8(
+                        source = this.name,
+                        streamUrl = resolvedTarget,
+                        referer = "",
+                        quality = Qualities.P1080.value,
+                        name = "$name - HLS Stream ($sourceName)"
+                    ).forEach { link ->
+                        callback.invoke(link)
+                    }
+                } catch (t: Throwable) {
+                    // ignore
+                }
+                success = true
+            }
+            // 7. General Extractor fallback
+            else if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
+                success = true
+            }
         }
+
+        return success
     }
 
     private suspend fun extractMega(
@@ -648,7 +533,7 @@ class RareAnimesProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else if (zipperUrl.contains("?")) "$zipperUrl&ad_done=1" else "$zipperUrl?ad_done=1"
+        val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else "$zipperUrl&ad_done=1"
         val response = app.get(
             targetUrl,
             headers = mapOf(
@@ -666,7 +551,7 @@ class RareAnimesProvider : MainAPI() {
         postUrl: String,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else if (zipperUrl.contains("?")) "$zipperUrl&ad_done=1" else "$zipperUrl?ad_done=1"
+        val targetUrl = if (zipperUrl.contains("ad_done=1")) zipperUrl else "$zipperUrl&ad_done=1"
         val response = app.get(
             targetUrl,
             headers = mapOf(
@@ -692,76 +577,54 @@ class RareAnimesProvider : MainAPI() {
     }
 
     private suspend fun extractMultiQuality(
-        embedOrZipperUrl: String,
+        zipperUrl: String,
         postUrl: String,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return try {
-            var embedUrl = embedOrZipperUrl
-            if (!embedUrl.contains("argon.razorshell.space/embed/")) {
-                val response = app.get(
-                    embedOrZipperUrl,
-                    headers = mapOf(
-                        "User-Agent" to USER_AGENT,
-                        "Referer" to postUrl
-                    )
+        val response = app.get(
+            zipperUrl,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to postUrl
+            )
+        )
+        val html = response.text
+        val embedUrl = Regex("""https?://argon\.razorshell\.space/embed/[A-Za-z0-9]+""").find(html)?.value ?: return false
+        val embedRes = app.get(
+            embedUrl,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to "https://codedew.com/"
+            )
+        )
+        val embedHtml = embedRes.text
+        val juicyMatch = Regex("""_juicycodes\((["'\s\S]*?)\);""").find(embedHtml) ?: return false
+        val encodedArg = juicyMatch.groupValues[1].replace("\"", "").replace("'", "").replace("+", "")
+            .replace("\n", "").replace("\r", "").replace(" ", "")
+
+        val decodedConfigStr = decodeJuicyCodes(encodedArg) ?: return false
+
+        val m3u8Match = Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(decodedConfigStr) ?: return false
+        val m3u8Url = m3u8Match.value
+
+        callback.invoke(
+            newExtractorLink(
+                source = this.name,
+                name = "$name - MultiQuality [Backup HLS]",
+                url = m3u8Url,
+                type = ExtractorLinkType.M3U8
+            ) {
+                this.referer = "https://argon.razorshell.space/"
+                this.headers = mapOf(
+                    "Referer" to "https://argon.razorshell.space/",
+                    "Origin" to "https://argon.razorshell.space",
+                    "User-Agent" to USER_AGENT
                 )
-                val html = response.text
-                embedUrl = Regex("""https?://argon\.razorshell\.space/embed/[A-Za-z0-9]+""").find(html)?.value ?: return false
+                this.quality = Qualities.P720.value
             }
+        )
 
-            val embedRes = app.get(
-                embedUrl,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "https://codedew.com/"
-                )
-            )
-            val embedHtml = embedRes.text
-            val juicyMatch = Regex("""_juicycodes\((["'\s\S]*?)\);""").find(embedHtml) ?: return false
-            val encodedArg = juicyMatch.groupValues[1].replace("\"", "").replace("'", "").replace("+", "")
-                .replace("\n", "").replace("\r", "").replace(" ", "")
-
-            val decodedConfigStr = decodeJuicyCodes(encodedArg) ?: return false
-            val m3u8Match = Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(decodedConfigStr) ?: return false
-            val m3u8Url = m3u8Match.value
-
-            val customHeaders = mapOf(
-                "Referer" to "https://argon.razorshell.space/",
-                "Origin" to "https://argon.razorshell.space",
-                "User-Agent" to USER_AGENT
-            )
-
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = "$name - MultiQuality [Backup HLS Master]",
-                    url = m3u8Url,
-                    type = ExtractorLinkType.M3U8
-                ) {
-                    this.referer = "https://argon.razorshell.space/"
-                    this.headers = customHeaders
-                    this.quality = Qualities.P1080.value
-                }
-            )
-
-            try {
-                M3u8Helper.generateM3u8(
-                    source = this.name,
-                    streamUrl = m3u8Url,
-                    referer = "https://argon.razorshell.space/",
-                    quality = Qualities.P1080.value,
-                    headers = customHeaders,
-                    name = "$name - MultiQuality HLS"
-                ).forEach { link ->
-                    callback.invoke(link)
-                }
-            } catch (t: Throwable) { }
-
-            true
-        } catch (e: Exception) {
-            false
-        }
+        return true
     }
 
     private fun decodeWorkerPayload(rawUrl: String?): String? {
