@@ -149,8 +149,7 @@ class FlixVisionProvider : MainAPI() {
                     val seasonEps = seasonData.episodes ?: emptyList()
                     for (ep in seasonEps) {
                         val epNum = ep.episodeNumber ?: continue
-                        val epTitle = ep.name ?: "Episode $epNum"
-                        val epLinkData = FlixVisionLinkData(
+                        val epData = FlixVisionLinkData(
                             id = id,
                             imdbId = imdbId,
                             season = sNum,
@@ -161,8 +160,8 @@ class FlixVisionProvider : MainAPI() {
                         ).toJson()
 
                         episodes.add(
-                            newEpisode(epLinkData) {
-                                this.name = epTitle
+                            newEpisode(epData) {
+                                this.name = ep.name ?: "Season $sNum Episode $epNum"
                                 this.season = sNum
                                 this.episode = epNum
                                 this.posterUrl = ep.stillPath?.let { "$TMDB_IMAGE_BASE$it" }
@@ -320,107 +319,14 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 7. RidoMovies
+        // 7. MovieRulz
         try {
-            val ridoUrls = listOf(
-                "https://ridomovies.tv/movies/${title.lowercase().replace(" ", "-")}",
-                "https://closeload.top/embed/$tmdbId"
-            )
-            for (rUrl in ridoUrls) {
-                try {
-                    if (loadExtractor(rUrl, "https://closeload.top/", subtitleCallback, callback)) loadedAny = true
-                    extractEmbeddedStreams(rUrl, "1080p - [FVSTREAM 2] - [DIRECT] - English", subtitleCallback, callback)
-                } catch (e: Exception) { }
-            }
-        } catch (e: Exception) { }
-
-        // 8. VixCloud
-        try {
-            val vixUrls = listOf(
-                "https://vixcloud.co/playlist/$tmdbId",
-                "https://streamingunity.dog/en/search?q=${URLEncoder.encode(title, "UTF-8")}"
-            )
-            for (vix in vixUrls) {
-                try {
-                    if (loadExtractor(vix, "https://vixcloud.co/", subtitleCallback, callback)) loadedAny = true
-                    extractEmbeddedStreams(vix, "1080p - [FVSTREAM 3] - [DIRECT] - English", subtitleCallback, callback)
-                } catch (e: Exception) { }
-            }
-        } catch (e: Exception) { }
-
-        // 9. Movies123 & Noxx
-        try {
-            val m123Url = "https://movies123.pk/?s=${URLEncoder.encode(title, "UTF-8")}"
-            extractEmbeddedStreams(m123Url, "1080p - [FVSTREAM 4] - [DIRECT] - English", subtitleCallback, callback)
-        } catch (e: Exception) { }
-
-        try {
-            val noxxUrl = if (isMovie) "https://noxx.to/movie/${title.lowercase().replace(" ", "-")}" else "https://noxx.to/tv/${title.lowercase().replace(" ", "-")}/season/$season/episode/$episode"
-            extractEmbeddedStreams(noxxUrl, "1080p - [FVSTREAM 5] - [DIRECT] - English", subtitleCallback, callback)
-        } catch (e: Exception) { }
-
-        // 10. Moflix
-        try {
-            val moflixUrl = if (isMovie) {
-                "https://moflix-stream.xyz/api/v1/titles/tmdb|movie|$tmdbId?loader=titlePage"
-            } else {
-                "https://moflix-stream.xyz/api/v1/titles/tmdb|series|$tmdbId?loader=titlePage"
-            }
-            val res = app.get(moflixUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://moflix-stream.xyz/")).text
-            extractStreamsFromJson(res, "1080p - [MOFLIX] - [DIRECT] - English/Multi", callback)
-        } catch (e: Exception) { }
-
-        // 11. HindiLinks4U
-        try {
-            val hindiQuery = URLEncoder.encode(title, "UTF-8")
-            val hindiLinksHosts = listOf("https://hindilinks4u.guru", "https://hindilinks4u.cam", "https://hindilinks4u.to")
-            for (hHost in hindiLinksHosts) {
-                try {
-                    val searchUrl = "$hHost/?s=$hindiQuery"
-                    val searchDoc = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to GOOGLE_REFERER)).document
-                    val movieHref = searchDoc.select(".ml-item a, article a, h2 a").firstOrNull()?.attr("href")
-                    if (!movieHref.isNullOrBlank()) {
-                        val movieDoc = app.get(movieHref, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to hHost)).document
-                        for (iframe in movieDoc.select("iframe[src], .movieplay iframe")) {
-                            val src = iframe.attr("src")
-                            val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                            try {
-                                loadExtractor(cleanSrc, hHost, subtitleCallback, callback)
-                            } catch (e: Exception) { }
-                        }
-                        extractEmbeddedStreams(movieHref, "1080p - [FLIXVISION HINDI 1] HindiLinks4U", subtitleCallback, callback)
-                        break
-                    }
-                } catch (e: Exception) { }
-            }
-        } catch (e: Exception) { }
-
-        // 12. HindiMoviesTV
-        try {
-            val hmtvUrl = "https://www.hindimoviestv.com/?s=${URLEncoder.encode(title, "UTF-8")}"
-            val searchDoc = app.get(hmtvUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to GOOGLE_REFERER)).document
-            val itemHref = searchDoc.select(".ml-item a, article a").firstOrNull()?.attr("href")
-            if (!itemHref.isNullOrBlank()) {
-                val detailDoc = app.get(itemHref, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://www.hindimoviestv.com/")).document
-                for (iframe in detailDoc.select("iframe[src]")) {
-                    val src = iframe.attr("src")
-                    val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                    try {
-                        loadExtractor(cleanSrc, "https://www.hindimoviestv.com/", subtitleCallback, callback)
-                    } catch (e: Exception) { }
-                }
-                extractEmbeddedStreams(itemHref, "1080p - [FLIXVISION HINDI 2] HindiMoviesTV", subtitleCallback, callback)
-            }
-        } catch (e: Exception) { }
-
-        // 13. MovieRulz
-        try {
-            val mrMirrors = listOf("https://ww9.watchmovierulz.ws", "https://www.movierulz.cr", "https://movierulz.com.ci")
-            for (mrHost in mrMirrors) {
+            val movieRulzHosts = listOf("https://ww3.movierulz.app", "https://ww2.movierulz.app")
+            for (mrHost in movieRulzHosts) {
                 try {
                     val searchUrl = "$mrHost/search_movies?s=${URLEncoder.encode(title, "UTF-8")}"
                     val doc = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to GOOGLE_REFERER)).document
-                    val movieLink = doc.select(".cont_display a, article a, .boxed a").firstOrNull()?.attr("href")
+                    val movieLink = doc.select(".boxed.film .cont_display a, .boxed.film a").firstOrNull()?.attr("href")
                     if (!movieLink.isNullOrBlank()) {
                         val pageDoc = app.get(movieLink, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mrHost)).document
                         for (iframe in pageDoc.select("iframe[src]")) {
@@ -437,7 +343,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 14. KissAsian
+        // 8. KissAsian
         try {
             val kissHosts = listOf("https://kissasiantv.to", "https://kissasian.pe")
             for (kHost in kissHosts) {
