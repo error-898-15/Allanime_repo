@@ -25,12 +25,11 @@ class FlixVisionProvider : MainAPI() {
     )
 
     companion object {
-        const val TMDB_API_KEY = "2f3cb5763db1117fcba3948632f8aad9"
-        const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
-        const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/original"
-        const val USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-        const val GOOGLE_REFERER = "https://www.google.com/"
+        private const val TMDB_API_KEY = "3b08e2f83196fbde3c7ee83c920cf122"
+        private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
+        private const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/original"
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        private const val GOOGLE_REFERER = "https://www.google.com/"
     }
 
     override val mainPage = mainPageOf(
@@ -49,8 +48,8 @@ class FlixVisionProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val connector = if (request.data.contains("?")) "&" else "?"
-        val url = "${request.data}${connector}api_key=$TMDB_API_KEY&page=$page"
+        val separator = if (request.data.contains("?")) "&" else "?"
+        val url = "${request.data}${separator}api_key=$TMDB_API_KEY&page=$page"
         val response = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).text
         val tmdbPage = parseJson<TmdbPageResult>(response)
 
@@ -70,21 +69,20 @@ class FlixVisionProvider : MainAPI() {
                 }
             }
         }
+
         return newHomePageResponse(request.name, items)
     }
 
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
-
     override suspend fun search(query: String): List<SearchResponse> {
-        val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
-        val searchUrl = "$mainUrl/search/multi?api_key=$TMDB_API_KEY&query=$encodedQuery&include_adult=false"
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val searchUrl = "$mainUrl/search/multi?api_key=$TMDB_API_KEY&query=$encoded&page=1"
         val response = app.get(searchUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
         val tmdbResult = parseJson<TmdbPageResult>(response)
 
         return tmdbResult.results.mapNotNull { item ->
             val id = item.id ?: return@mapNotNull null
             val title = item.title ?: item.name ?: item.originalTitle ?: item.originalName ?: return@mapNotNull null
-            val isMovie = item.mediaType == "movie" || item.title != null
+            val isMovie = item.mediaType != "tv"
             val poster = item.posterPath?.let { "$TMDB_IMAGE_BASE$it" }
 
             if (isMovie) {
@@ -101,10 +99,9 @@ class FlixVisionProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val isMovie = url.contains("/movie/")
-        val id = url.substringAfter("/movie/").substringAfter("/tv/").substringBefore("?").trim().toIntOrNull()
-            ?: return null
-        val type = if (isMovie) "movie" else "tv"
-        val detailUrl = "$mainUrl/$type/$id?api_key=$TMDB_API_KEY&append_to_response=external_ids"
+        val id = url.substringAfter("/movie/").substringAfter("/tv/").substringBefore("?").trim().toIntOrNull() ?: return null
+        val typePath = if (isMovie) "movie" else "tv"
+        val detailUrl = "$mainUrl/$typePath/$id?api_key=$TMDB_API_KEY&append_to_response=external_ids"
         val response = app.get(detailUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
 
         if (isMovie) {
