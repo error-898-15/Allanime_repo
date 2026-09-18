@@ -28,345 +28,284 @@ class CineVoodProvider : MainAPI() {
     )
 
     companion object {
-        const val USER_AGENT =
+        private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        private const val BYPASS_REFERER = "https://cinevood.rocks/"
 
-        // Search engine referer bypasses Cloudflare anti-scraping WAF
-        const val BYPASS_REFERER = "https://www.google.com/"
-
-        val MIRROR_DOMAINS = listOf(
+        private val MIRRORS = listOf(
             "https://cinevood.rocks",
-            "https://cinevood.bingo",
-            "https://cinevood.cv",
-            "https://new1.cinevood.cv",
-            "https://1cinevood.eu",
-            "https://cinevood.net",
-            "https://cinevood.site"
+            "https://cinevood.lat",
+            "https://cinevood.bond",
+            "https://cinevood.baby",
+            "https://cinevood.surf",
+            "https://cinevood.lol",
+            "https://cinevood.vip",
+            "https://cinevood.art",
+            "https://cinevood.guru"
         )
     }
 
-    private suspend fun getDocument(url: String, referer: String = BYPASS_REFERER): Document {
-        val headers = mapOf(
-            "User-Agent" to USER_AGENT,
-            "Referer" to referer,
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language" to "en-US,en;q=0.9"
-        )
-        return try {
-            app.get(url, headers = headers).document
-        } catch (e: Exception) {
-            val currentDomain = try { URI(url).host } catch (_: Exception) { null }
-            var lastErr: Exception = e
-            for (mirror in MIRROR_DOMAINS) {
-                val mirrorHost = try { URI(mirror).host } catch (_: Exception) { null }
-                if (currentDomain != null && mirrorHost != null && mirrorHost.equals(currentDomain, ignoreCase = true)) continue
-                val fallbackUrl = if (currentDomain != null) url.replace("https://$currentDomain", mirror) else mirror
-                try {
-                    return app.get(fallbackUrl, headers = headers).document
-                } catch (err: Exception) {
-                    lastErr = err
+    private fun resolveUrl(url: String): String {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            val currentDomain = try { URI(url).host } catch (e: Exception) { null }
+            if (currentDomain != null && currentDomain.contains("cinevood")) {
+                for (mirror in MIRRORS) {
+                    val mirrorHost = try { URI(mirror).host } catch (e2: Exception) { null }
+                    if (mirrorHost == currentDomain) {
+                        return url.replaceFirst(mirror, mainUrl)
+                    }
                 }
             }
-            throw lastErr
+            return url
         }
+        val cleanPath = if (url.startsWith("/")) url else "/$url"
+        return "$mainUrl$cleanPath"
     }
 
     override val mainPage = mainPageOf(
         "$mainUrl/" to "Latest Releases",
-        "$mainUrl/bollywood/" to "Bollywood Movies",
-        "$mainUrl/hollywood/" to "Hollywood Movies",
-        "$mainUrl/hindi-dubbed/hollywood-dubbed/" to "Hollywood Hindi Dubbed",
-        "$mainUrl/hindi-dubbed/south-dubbed/" to "South Hindi Dubbed",
-        "$mainUrl/punjabi/" to "Punjabi Movies",
-        "$mainUrl/bengali/" to "Bengali Movies",
-        "$mainUrl/web-series/" to "All Web Series",
-        "$mainUrl/web-series/netflix-web-series/" to "Netflix Web Series",
-        "$mainUrl/web-series/amazon-web-series-webshow/" to "Amazon Web Series",
-        "$mainUrl/web-series/hotstar-web-series/" to "Hotstar Web Series",
-        "$mainUrl/web-series/zee5-web-series/" to "Zee5 Web Series",
-        "$mainUrl/tv-shows/" to "TV Shows"
+        "$mainUrl/category/bollywood-movies/" to "Bollywood Movies",
+        "$mainUrl/category/hollywood-movies/" to "Hollywood (Hindi Dubbed)",
+        "$mainUrl/category/south-indian-hindi/" to "South Hindi Dubbed",
+        "$mainUrl/category/web-series/" to "Web Series",
+        "$mainUrl/category/korean-drama/" to "Korean & Asian Dramas",
+        "$mainUrl/category/4k-ultra-hd/" to "4K UHD Movies",
+        "$mainUrl/category/1080p-movies/" to "1080p FHD Movies",
+        "$mainUrl/category/720p-movies/" to "720p HD Movies"
     )
 
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val baseUrl = if (request.data.endsWith("/")) request.data else "${request.data}/"
-        val url = if (page <= 1) baseUrl else "${baseUrl}page/$page/"
-
-        val items = try {
-            val document = getDocument(url)
-            val results = document.select("article.latestPost, article.post, article.excerpt, div.latestPost, article").mapNotNull {
-                it.toSearchResult()
-            }
-            if (results.isEmpty()) {
-                val fallbackQuery = request.name.lowercase()
-                    .replace("movies", "")
-                    .replace("web series", "")
-                    .replace("all", "")
-                    .trim()
-                if (fallbackQuery.isNotBlank()) searchViaApi(fallbackQuery, page) else emptyList()
-            } else results
-        } catch (_: Exception) {
-            val fallbackQuery = request.name.lowercase()
-                .replace("movies", "")
-                .replace("web series", "")
-                .replace("all", "")
-                .trim()
-            if (fallbackQuery.isNotBlank()) searchViaApi(fallbackQuery, page) else emptyList()
-        }
-
-        return newHomePageResponse(request.name, items)
-    }
-
-    private fun cleanImageUrl(url: String?): String? {
-        if (url.isNullOrBlank()) return null
-        var clean = url.trim()
-        if (clean.startsWith("data:image") || clean.contains("cvlogo.png") || clean.contains("favicon")) {
-            return null
-        }
-        if (clean.startsWith("//")) {
-            clean = "https:$clean"
-        } else if (clean.startsWith("/")) {
-            clean = "$mainUrl$clean"
-        }
-        if (clean.contains("image.tmdb.org")) {
-            clean = clean.replace("/w185/", "/w500/")
-                .replace("/w342/", "/w500/")
-                .replace("/w300/", "/w500/")
-                .replace("/w780/", "/w500/")
-        }
-        return clean
-    }
-
-    private fun extractPoster(element: Element?): String? {
-        if (element == null) return null
-        val img = if (element.tagName().equals("img", ignoreCase = true)) element else element.selectFirst("img")
-        val raw = if (img != null) {
-            val dSrc = img.attr("data-src").trim()
-            val dLazy = img.attr("data-lazy-src").trim()
-            val dOrig = img.attr("data-original").trim()
-            val dSrcset = img.attr("data-srcset").substringBefore(" ").trim()
-            val srcset = img.attr("srcset").substringBefore(" ").trim()
-            val src = img.attr("src").trim()
-            when {
-                dSrc.isNotBlank() && !dSrc.startsWith("data:image") -> dSrc
-                dLazy.isNotBlank() && !dLazy.startsWith("data:image") -> dLazy
-                dOrig.isNotBlank() && !dOrig.startsWith("data:image") -> dOrig
-                dSrcset.isNotBlank() && !dSrcset.startsWith("data:image") -> dSrcset
-                srcset.isNotBlank() && !srcset.startsWith("data:image") -> srcset
-                src.isNotBlank() && !src.startsWith("data:image") -> src
-                else -> null
-            }
+        val targetUrl = if (page <= 1) {
+            request.data
         } else {
-            val directSrc = element.attr("src").ifEmpty { element.attr("data-src") }.trim()
-            if (directSrc.isNotBlank() && !directSrc.startsWith("data:image")) directSrc else null
-        }
-        return cleanImageUrl(raw)
-    }
-
-    private fun Element.toSearchResult(): SearchResponse? {
-        val titleEl = this.selectFirst("h2.title a, .front-view-title a, h2 a, h3 a, h2, h3")
-        val title = titleEl?.text()?.trim()?.ifEmpty { null }
-            ?: titleEl?.attr("title")?.trim()?.ifEmpty { null }
-            ?: this.selectFirst("a.post-image")?.attr("title")?.trim()?.ifEmpty { null }
-            ?: this.selectFirst("img")?.attr("title")?.trim()?.ifEmpty { null }
-            ?: this.selectFirst("img")?.attr("alt")?.trim()?.ifEmpty { null }
-            ?: return null
-
-        val href = this.selectFirst("h2.title a, .front-view-title a, h2 a, a.post-image")?.attr("href")
-            ?: this.selectFirst("a[href]")?.attr("href")
-            ?: return null
-
-        if (href.contains("/category/") || href.contains("/tag/") || href.contains("/page/")) {
-            return null
+            val base = request.data.removeSuffix("/")
+            "$base/page/$page/"
         }
 
-        val fullUrl = if (href.startsWith("http")) href else "$mainUrl$href"
-        val posterUrl = extractPoster(this.selectFirst(".featured-thumbnail, .post-image, img") ?: this)
-        val isSeries = fullUrl.contains("/web-series/") || fullUrl.contains("/tv-shows/") || title.contains("Season", ignoreCase = true)
-
-        return if (isSeries) {
-            newTvSeriesSearchResponse(title, fullUrl, TvType.TvSeries) {
-                this.posterUrl = posterUrl
-            }
-        } else {
-            newMovieSearchResponse(title, fullUrl, TvType.Movie) {
-                this.posterUrl = posterUrl
-            }
-        }
-    }
-
-    data class CineVoodSearchHit(
-        @JsonProperty("document") val document: CineVoodSearchDoc? = null
-    )
-
-    data class CineVoodSearchDoc(
-        @JsonProperty("post_title") val postTitle: String? = null,
-        @JsonProperty("permalink") val permalink: String? = null,
-        @JsonProperty("post_thumbnail") val postThumbnail: String? = null
-    )
-
-    data class CineVoodSearchResponse(
-        @JsonProperty("found") val found: Int? = null,
-        @JsonProperty("hits") val hits: List<CineVoodSearchHit>? = null
-    )
-
-    private suspend fun searchViaApi(query: String, page: Int = 1): List<SearchResponse> {
-        val encoded = URLEncoder.encode(query, "UTF-8")
-        return try {
-            val apiRes = app.get(
-                "$mainUrl/search.php?q=$encoded&page=$page",
+        val document = try {
+            app.get(
+                targetUrl,
                 headers = mapOf(
                     "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/search.html",
-                    "Accept" to "application/json, text/plain, */*"
-                )
-            ).parsedSafe<CineVoodSearchResponse>()
+                    "Referer" to BYPASS_REFERER
+                ),
+                timeout = 25
+            ).document
+        } catch (e: Exception) {
+            var workingDoc: Document? = null
+            for (mirror in MIRRORS) {
+                if (mirror == mainUrl) continue
+                try {
+                    val fallbackUrl = targetUrl.replace(mainUrl, mirror)
+                    val res = app.get(
+                        fallbackUrl,
+                        headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mirror/"),
+                        timeout = 15
+                    )
+                    if (res.isSuccessful) {
+                        mainUrl = mirror
+                        workingDoc = res.document
+                        break
+                    }
+                } catch (e2: Exception) { }
+            }
+            workingDoc ?: throw e
+        }
 
-            apiRes?.hits?.mapNotNull { hit ->
-                val doc = hit.document ?: return@mapNotNull null
-                val title = doc.postTitle?.trim() ?: return@mapNotNull null
-                val permalink = doc.permalink?.trim() ?: return@mapNotNull null
-                val fullUrl = if (permalink.startsWith("http")) permalink else "$mainUrl$permalink"
-                val posterUrl = cleanImageUrl(doc.postThumbnail)
-                val isSeries = fullUrl.contains("/web-series/") || fullUrl.contains("/tv-shows/") || title.contains("Season", ignoreCase = true)
+        val items = parseListing(document)
+        val hasNext = document.select("a.next, .pagination .next, a:contains(Next), a:contains(»)").isNotEmpty() || items.size >= 12
+        return newHomePageResponse(
+            list = HomePageList(
+                name = request.name,
+                list = items,
+                isHorizontalImages = false
+            ),
+            hasNext = hasNext
+        )
+    }
 
-                if (isSeries) {
+    private fun parseListing(document: Document): List<SearchResponse> {
+        val results = mutableListOf<SearchResponse>()
+        val elements = document.select("article, .post-item, .item, .latest-post, div[id^=post-], .thumb.col-md-2, .col-md-2, .movie-poster, .result-item, .search-item")
+
+        for (element in elements) {
+            val linkElement = element.selectFirst("a[href*='/']:not([href*='category']):not([href*='tag']):not([href*='page'])")
+                ?: element.selectFirst("h2 a, h3 a, h1 a, .entry-title a, .title a, a")
+                ?: continue
+
+            val href = linkElement.attr("href")
+            if (href.isBlank() || href == "#" || href.contains("/category/") || href.contains("/tag/") || href.contains("/author/")) {
+                continue
+            }
+
+            val title = linkElement.attr("title").ifBlank {
+                element.selectFirst("h2, h3, .entry-title, .title, img[alt]")?.let {
+                    it.attr("alt").ifBlank { it.text() }
+                } ?: linkElement.text()
+            }.cleanTitle()
+
+            if (title.isBlank()) continue
+
+            val posterUrl = element.selectFirst("img")?.let { img ->
+                img.attr("data-src").ifBlank {
+                    img.attr("data-lazy-src").ifBlank {
+                        img.attr("data-original").ifBlank {
+                            img.attr("src")
+                        }
+                    }
+                }
+            }?.let { fixImageUrl(it) }
+
+            val fullUrl = resolveUrl(href)
+            val isTv = title.contains("Season", ignoreCase = true) ||
+                    title.contains("S0", ignoreCase = true) ||
+                    title.contains("Series", ignoreCase = true) ||
+                    title.contains("Episode", ignoreCase = true) ||
+                    fullUrl.contains("season", ignoreCase = true)
+
+            if (isTv) {
+                results.add(
                     newTvSeriesSearchResponse(title, fullUrl, TvType.TvSeries) {
                         this.posterUrl = posterUrl
                     }
-                } else {
+                )
+            } else {
+                results.add(
                     newMovieSearchResponse(title, fullUrl, TvType.Movie) {
                         this.posterUrl = posterUrl
                     }
-                }
-            } ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
+                )
+            }
         }
+        return results.distinctBy { it.url }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val results = searchViaApi(query, 1)
-        if (results.isNotEmpty()) {
-            return results
-        }
+        val cleanQuery = query.trim()
+        val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
+        val searchUrls = listOf(
+            "$mainUrl/?s=$encoded",
+            "$mainUrl/search/$encoded/",
+            "$mainUrl/page/1/?s=$encoded"
+        )
 
-        val encoded = URLEncoder.encode(query, "UTF-8")
-        return try {
-            val document = getDocument("$mainUrl/?s=$encoded")
-            document.select("article.latestPost, article.post, article.excerpt, div.result-item, article").mapNotNull {
-                it.toSearchResult()
+        for (searchUrl in searchUrls) {
+            try {
+                val doc = app.get(
+                    searchUrl,
+                    headers = mapOf(
+                        "User-Agent" to USER_AGENT,
+                        "Referer" to BYPASS_REFERER
+                    ),
+                    timeout = 25
+                ).document
+
+                val items = parseListing(doc)
+                if (items.isNotEmpty()) {
+                    return items
+                }
+
+                val altElements = doc.select(".search-post, .archive-post, .result-item, .items article, .post")
+                val altItems = mutableListOf<SearchResponse>()
+                for (el in altElements) {
+                    val aTag = el.selectFirst("a[href]") ?: continue
+                    val rawHref = aTag.attr("href")
+                    if (rawHref.contains("/category/") || rawHref.contains("/tag/")) continue
+                    val fullUrl = resolveUrl(rawHref)
+                    val rawTitle = (el.selectFirst(".title, h2, h3, a")?.text() ?: aTag.attr("title")).cleanTitle()
+                    if (rawTitle.isBlank()) continue
+
+                    val poster = el.selectFirst("img")?.let { img ->
+                        img.attr("data-src").ifBlank { img.attr("data-lazy-src").ifBlank { img.attr("src") } }
+                    }?.let { fixImageUrl(it) }
+
+                    val isTv = rawTitle.contains("Season", ignoreCase = true) || fullUrl.contains("season")
+                    if (isTv) {
+                        altItems.add(
+                            newTvSeriesSearchResponse(rawTitle, fullUrl, TvType.TvSeries) {
+                                this.posterUrl = poster
+                            }
+                        )
+                    } else {
+                        altItems.add(
+                            newMovieSearchResponse(rawTitle, fullUrl, TvType.Movie) {
+                                this.posterUrl = poster
+                            }
+                        )
+                    }
+                }
+                if (altItems.isNotEmpty()) {
+                    return altItems.distinctBy { it.url }
+                }
+            } catch (e: Exception) {
+                // Try next mirror
             }
-        } catch (_: Exception) {
-            emptyList()
         }
+        return emptyList()
     }
 
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+
     override suspend fun load(url: String): LoadResponse? {
+        val finalUrl = resolveUrl(url)
         val document = try {
-            getDocument(url)
-        } catch (_: Exception) {
-            null
-        }
-
-        var title = document?.selectFirst("h1.entry-title, h1.title, .post-title, meta[property='og:title']")?.text()?.trim()
-        var posterUrl = cleanImageUrl(
-            document?.selectFirst("meta[property='og:image']")?.attr("content")
-                ?: document?.selectFirst("meta[name='twitter:image']")?.attr("content")
-                ?: extractPoster(document?.selectFirst(".cv-movie-poster-wrap img, .featured-thumbnail img, div.post-single-content img, .thecontent img"))
-        )
-        var plot = document?.selectFirst("div.cv-card-download-info, div.post-single-content p, div.entry-content p, .thecontent p, meta[property='og:description']")?.text()?.trim()
-
-        // Resilient Failsafe: If HTML scraping failed or gave Unknown Title, query search API using URL slug
-        if (title.isNullOrBlank() || title.equals("Unknown Title", ignoreCase = true)) {
-            val slug = url.trimEnd('/').substringAfterLast('/')
-            val cleanSlug = slug.replace(Regex("""[-_]"""), " ").trim()
-            if (cleanSlug.isNotBlank()) {
-                val searchFallback = searchViaApi(cleanSlug)
-                val match = searchFallback.firstOrNull { it.url.contains(slug) } ?: searchFallback.firstOrNull()
-                if (match != null) {
-                    title = match.name
-                    if (posterUrl.isNullOrBlank()) posterUrl = match.posterUrl
-                }
+            app.get(
+                finalUrl,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Referer" to BYPASS_REFERER
+                ),
+                timeout = 25
+            ).document
+        } catch (e: Exception) {
+            var workingDoc: Document? = null
+            for (mirror in MIRRORS) {
+                try {
+                    val fallbackUrl = finalUrl.replace(mainUrl, mirror)
+                    val res = app.get(
+                        fallbackUrl,
+                        headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "$mirror/"),
+                        timeout = 15
+                    )
+                    if (res.isSuccessful) {
+                        mainUrl = mirror
+                        workingDoc = res.document
+                        break
+                    }
+                } catch (e2: Exception) { }
             }
+            workingDoc ?: return null
         }
 
-        val finalTitle = title ?: "CineVood Video"
-        val yearMatch = Regex("""\b(19\d\d|20\d\d)\b""").find(finalTitle)
-        val year = yearMatch?.groupValues?.get(1)?.toIntOrNull()
+        val rawTitle = document.selectFirst("h1.entry-title, h1.title, h1, .post-title, .entry-title")?.text()
+            ?: document.title()
+        val finalTitle = rawTitle.cleanTitle()
 
-        val tags = document?.select("div.thecategory a, div.thetags a, a[rel='category tag'], div.tags a, a[href*='/category/']")
-            ?.map { it.text().trim() }
-            ?.filter { it.isNotBlank() && !it.equals("Movies", ignoreCase = true) }
-            ?.distinct()
-            ?: emptyList()
+        val posterUrl = document.selectFirst(".entry-content img, .post-thumbnail img, .poster img, meta[property='og:image']")?.let { el ->
+            if (el.tagName() == "meta") el.attr("content")
+            else el.attr("data-src").ifBlank { el.attr("data-lazy-src").ifBlank { el.attr("src") } }
+        }?.let { fixImageUrl(it) }
 
-        val isSeries = url.contains("/web-series/") || 
-                       url.contains("/tv-shows/") || 
-                       finalTitle.contains("Season", ignoreCase = true) ||
-                       Regex("""\bS\d+\b""", RegexOption.IGNORE_CASE).containsMatchIn(finalTitle) ||
-                       Regex("""\bS\d+\b""", RegexOption.IGNORE_CASE).containsMatchIn(url) ||
-                       finalTitle.contains("Series", ignoreCase = true)
+        val plot = document.selectFirst(".entry-content p, .overview, .plot, .description, #synopsis")?.text()?.trim()
 
-        val buttons = document?.select("a.maxbutton, .maxbutton-1, .maxbutton-2, .maxbutton-6, .maxbutton-7, .maxbutton-8, .maxbutton-15, a[href*='hubcloud'], a[href*='oxxfile'], a[href*='gdflix'], a[href*='filepress'], a[href*='pixeldrain'], a[href*='playmate'], .thecontent a[href], .post-single-content a[href], div.entry-content a[href]")
-            ?.filter { a ->
-                val href = a.attr("href").trim()
-                href.isNotBlank() && !href.startsWith("#") && !href.contains("javascript:") && 
-                !href.contains("telegram") && !href.contains("t.me") && !href.contains("whatsapp") && 
-                !href.contains("wa.me") && !href.contains("report-broken-links")
-            } ?: emptyList()
+        val year = Regex("""(19\d{2}|20\d{2})""").find(rawTitle)?.groupValues?.get(1)?.toIntOrNull()
+            ?: Regex("""(19\d{2}|20\d{2})""").find(document.text())?.groupValues?.get(1)?.toIntOrNull()
 
-        val episodeLinks = buttons.filter { a ->
-            val t = a.text().trim()
-            val href = a.attr("href").trim()
-            t.contains("Episode", ignoreCase = true) ||
-            t.contains("EP ", ignoreCase = true) ||
-            t.contains("EP-", ignoreCase = true) ||
-            Regex("""EP\s*\d+""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
-            Regex("""E\d+""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
-            Regex("""Episode\s*\d+""", RegexOption.IGNORE_CASE).containsMatchIn(href)
-        }
+        val tags = document.select(".entry-content a[href*='/category/'], .entry-content a[href*='/tag/'], .tags a, .categories a")
+            .map { it.text().trim() }
+            .filter { it.isNotBlank() && !it.contains("Movies", ignoreCase = true) }
 
-        if (isSeries) {
-            val episodes = if (episodeLinks.isNotEmpty()) {
-                episodeLinks.mapIndexedNotNull { index, ep ->
-                    val epHref = ep.attr("href").trim()
-                    if (epHref.isBlank() || epHref.startsWith("#")) return@mapIndexedNotNull null
-                    val epText = ep.text().trim()
-                    val sMatch = Regex("""S(\d+)""", RegexOption.IGNORE_CASE).find(epText)
-                    val eMatch = Regex("""(?:Episode|EP|E)\s*(\d+)""", RegexOption.IGNORE_CASE).find(epText)
-                    val season = sMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    val epNum = eMatch?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
-                    newEpisode(epHref) {
-                        this.name = epText
-                        this.season = season
-                        this.episode = epNum
-                        this.posterUrl = posterUrl
-                    }
-                }
-            } else if (buttons.isNotEmpty()) {
-                // When episodes are organized by quality or season packs (e.g. OxxFile/HubCloud packs)
-                buttons.mapIndexedNotNull { index, btn ->
-                    val epHref = btn.attr("href").trim()
-                    if (epHref.isBlank() || epHref.startsWith("#")) return@mapIndexedNotNull null
-                    val parentHeading = btn.parents().firstOrNull { it.select("h6, h5, h4, p").isNotEmpty() }?.select("h6, h5, h4, p")?.text()?.trim() ?: ""
-                    val btnText = btn.text().trim()
-                    val label = if (parentHeading.isNotBlank()) parentHeading else btnText
-                    val sMatch = Regex("""S(\d+)""", RegexOption.IGNORE_CASE).find("$label $epHref")
-                    val eMatch = Regex("""(?:Episode|EP|E)\s*(\d+)""", RegexOption.IGNORE_CASE).find("$label $epHref")
-                    val season = sMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-                    val epNum = eMatch?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
-                    newEpisode(epHref) {
-                        this.name = label
-                        this.season = season
-                        this.episode = epNum
-                        this.posterUrl = posterUrl
-                    }
-                }
-            } else emptyList()
+        val isTvSeries = finalTitle.contains("Season", ignoreCase = true) ||
+                finalTitle.contains("S0", ignoreCase = true) ||
+                finalTitle.contains("Series", ignoreCase = true) ||
+                finalTitle.contains("Episode", ignoreCase = true) ||
+                finalUrl.contains("season", ignoreCase = true)
 
+        if (isTvSeries) {
+            val episodes = parseEpisodes(document, finalUrl, finalTitle, posterUrl)
             if (episodes.isNotEmpty()) {
                 return newTvSeriesLoadResponse(finalTitle, url, TvType.TvSeries, episodes) {
                     this.posterUrl = posterUrl
@@ -385,6 +324,54 @@ class CineVoodProvider : MainAPI() {
         }
     }
 
+    private fun parseEpisodes(
+        document: Document,
+        url: String,
+        seriesTitle: String,
+        posterUrl: String?
+    ): List<Episode> {
+        val episodes = mutableListOf<Episode>()
+        val defaultSeason = Regex("""Season\s*(\d+)""", RegexOption.IGNORE_CASE)
+            .find(seriesTitle)?.groupValues?.get(1)?.toIntOrNull()
+            ?: Regex("""S(\d+)""", RegexOption.IGNORE_CASE)
+                .find(seriesTitle)?.groupValues?.get(1)?.toIntOrNull()
+            ?: 1
+
+        val links = document.select(".entry-content a[href], .download-links a[href], a.btn[href], a.download-btn[href]")
+        for (link in links) {
+            val text = link.text().trim()
+            val href = link.attr("href").trim()
+            if (href.isBlank() || href.startsWith("#") || href.contains("javascript:")) continue
+
+            val epMatch = Regex("""(?:Episode|Ep|E)\s*(\d+)""", RegexOption.IGNORE_CASE).find(text)
+            if (epMatch != null) {
+                val epNum = epMatch.groupValues[1].toIntOrNull() ?: continue
+                val epTitle = "Episode $epNum - $text"
+                episodes.add(
+                    newEpisode(href) {
+                        this.name = epTitle
+                        this.season = defaultSeason
+                        this.episode = epNum
+                        this.posterUrl = posterUrl
+                    }
+                )
+            }
+        }
+
+        if (episodes.isEmpty()) {
+            episodes.add(
+                newEpisode(url) {
+                    this.name = "Full Series / All Episodes"
+                    this.season = defaultSeason
+                    this.episode = 1
+                    this.posterUrl = posterUrl
+                }
+            )
+        }
+
+        return episodes.distinctBy { "${it.season}-${it.episode}-${it.data}" }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -394,99 +381,80 @@ class CineVoodProvider : MainAPI() {
         var foundAny = false
         val processedUrls = mutableSetOf<String>()
 
-        // 1. Direct host or episode link passed directly
-        val isDirectHost = data.contains("hubcloud") || data.contains("oxxfile") || 
-                           data.contains("gamerxyt") || data.contains("vifix") || 
-                           data.contains("pixeldrain") || data.contains("gdflix") ||
-                           data.endsWith(".mp4") || data.endsWith(".mkv") || data.contains(".m3u8")
+        val isDirectHost = data.contains("hubcloud") || data.contains("oxxfile") ||
+                data.contains("gamerxyt") || data.contains("vifix") ||
+                data.contains("pixeldrain") || data.contains("gdflix") ||
+                data.contains("fastdrive") || data.contains("driveseed") ||
+                data.endsWith(".mp4") || data.endsWith(".mkv") || data.contains(".m3u8")
 
         if (isDirectHost) {
-            val quality = determineQuality(data)
-            return resolveLink(data, quality, subtitleCallback, callback)
+            return resolveDownloadPage(data, subtitleCallback, callback, processedUrls)
         }
 
-        // 2. Movie/Post URL: extract download buttons
         val document = try {
-            getDocument(data)
-        } catch (_: Exception) {
-            null
+            app.get(
+                data,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Referer" to BYPASS_REFERER
+                ),
+                timeout = 25
+            ).document
+        } catch (e: Exception) {
+            return false
         }
 
-        if (document != null) {
-            val candidateSelectors = listOf(
-                "a.maxbutton-hubcloud",
-                "a.maxbutton-oxxfile",
-                "a[href*='hubcloud']",
-                "a[href*='oxxfile']",
-                "a[href*='gamerxyt']",
-                "a[href*='vifix']",
-                "a[href*='pixeldrain']",
-                "a[href*='fastcloud']",
-                "a.maxbutton",
-                "a[href*='gdflix']",
-                ".thecontent a[href]",
-                ".post-single-content a[href]",
-                "div.entry-content a[href]"
-            )
+        val downloadElements = document.select(
+            ".entry-content a[href], .download-links a[href], a.btn[href], " +
+                    "a[href*='hubcloud'], a[href*='gamerxyt'], a[href*='oxxfile'], " +
+                    "a[href*='vifix'], a[href*='gdflix'], a[href*='fastdrive'], " +
+                    "a[href*='pixeldrain'], a[href*='links'], a[href*='token'], " +
+                    "a[href*='download'], a[href*='drive'], a.maxbutton[href]"
+        )
 
-            val buttons = document.select(candidateSelectors.joinToString(", "))
-            val candidateList = mutableListOf<Pair<String, Pair<String, Int>>>()
+        val targetUrls = mutableListOf<Pair<String, String>>()
+        for (el in downloadElements) {
+            val href = el.attr("href").trim()
+            val text = el.text().trim()
+            if (href.isBlank() || href.startsWith("#") || href.contains("javascript:") || href.contains("wp-admin")) continue
+            if (href.contains("/category/") || href.contains("/tag/") || href.contains("/author/")) continue
 
-            for (btn in buttons) {
-                val href = btn.attr("href").trim()
-                if (href.isBlank() || href.startsWith("#") || href.contains("javascript:") ||
-                    href.contains("telegram") || href.contains("t.me") || href.contains("whatsapp") ||
-                    href.contains("wa.me") || href.contains("facebook") || href.contains("twitter") ||
-                    href.contains("warning.php") || href.contains("report-broken-links") ||
-                    href.contains("youtube.com") || href.contains("youtu.be")) continue
+            val isLikelyStream = href.contains("hubcloud") || href.contains("gamerxyt") ||
+                    href.contains("oxxfile") || href.contains("vifix") ||
+                    href.contains("pixeldrain") || href.contains("gdflix") ||
+                    href.contains("fastdrive") || href.contains("driveseed") ||
+                    href.contains("links") || href.contains("token") ||
+                    href.contains("download") || text.contains("1080p", ignoreCase = true) ||
+                    text.contains("720p", ignoreCase = true) || text.contains("480p", ignoreCase = true) ||
+                    text.contains("4k", ignoreCase = true) || text.contains("download", ignoreCase = true) ||
+                    text.contains("drive", ignoreCase = true) || text.contains("hub", ignoreCase = true)
 
-                val isViable = href.contains("hubcloud") || href.contains("oxxfile") || 
-                               href.contains("gamerxyt") || href.contains("vifix") || 
-                               href.contains("pixeldrain") || href.contains("fastcloud") || 
-                               href.contains("gdflix") || href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")
-                if (!isViable) continue
-
-                if (processedUrls.contains(href)) continue
-                processedUrls.add(href)
-
-                val parentHeader = btn.parents().firstOrNull { it.select("h6, h5, h4, p").isNotEmpty() }?.select("h6, h5, h4, p")?.text() ?: ""
-                val btnText = btn.text().trim()
-                val quality = determineQuality("$parentHeader $btnText $href")
-
-                candidateList.add(Pair(href, quality))
+            if (isLikelyStream) {
+                targetUrls.add(href to text)
             }
+        }
 
-            // Prioritize HubCloud and OxxFile first, as they provide 100% working high-speed CDN streams
-            val sortedCandidates = candidateList.sortedByDescending { (href, _) ->
-                when {
-                    href.contains("hubcloud") || href.contains("gamerxyt") -> 3
-                    href.contains("oxxfile") -> 2
-                    href.contains("pixeldrain") -> 2
-                    else -> 1
-                }
-            }.take(8) // Limit to top 8 distinct links to prevent timeout
-
-            for ((href, quality) in sortedCandidates) {
-                val ok = resolveLink(href, quality, subtitleCallback, callback)
-                if (ok) foundAny = true
-            }
+        for ((linkUrl, qualityText) in targetUrls) {
+            val success = resolveDownloadPage(linkUrl, subtitleCallback, callback, processedUrls, qualityText)
+            if (success) foundAny = true
         }
 
         return foundAny
     }
 
-    private suspend fun resolveLink(
+    private suspend fun resolveDownloadPage(
         url: String,
-        quality: Pair<String, Int>,
         subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        callback: (ExtractorLink) -> Unit,
+        processedUrls: MutableSet<String>,
+        hintText: String = ""
     ): Boolean {
+        if (!processedUrls.add(url)) return false
+        val quality = getQualityFromName(hintText.ifBlank { url })
+
         return when {
-            url.contains("hubcloud") || url.contains("vifix.site") || url.contains("gamerxyt") -> {
+            url.contains("hubcloud") || url.contains("gamerxyt") || url.contains("oxxfile") || url.contains("vifix") -> {
                 extractHubCloud(url, quality, subtitleCallback, callback)
-            }
-            url.contains("oxxfile") -> {
-                extractOxxFile(url, quality, subtitleCallback, callback)
             }
             url.contains("pixeldrain.com") || url.contains("pixeldrain.dev") -> {
                 val id = url.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
@@ -525,8 +493,7 @@ class CineVoodProvider : MainAPI() {
             else -> {
                 try {
                     loadExtractor(url, BYPASS_REFERER, subtitleCallback, callback)
-                    true
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     false
                 }
             }
@@ -539,187 +506,46 @@ class CineVoodProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return try {
-            var targetUrl = url.trim()
-            if (targetUrl.contains("vifix.site/hubcloud/")) {
-                val id = targetUrl.substringAfter("hubcloud/").substringBefore("?").trim()
-                targetUrl = "https://hubcloud.ist/drive/$id"
-            }
-
-            val doc1 = app.get(
-                targetUrl,
+        var found = false
+        try {
+            val cleanUrl = if (url.contains("?id=")) url else url
+            val res = app.get(
+                cleanUrl,
                 headers = mapOf(
                     "User-Agent" to USER_AGENT,
                     "Referer" to BYPASS_REFERER
-                )
-            ).document
+                ),
+                timeout = 20
+            )
 
-            var extracted = parseHubCloudLinks(doc1, targetUrl, quality, subtitleCallback, callback)
+            val doc = res.document
+            val finalDownloadUrl = doc.selectFirst("a[href*='/api/file/'], a#download, a.btn-success, a:contains(Download Now)")?.attr("href")
 
-            // Step 2: HubCloud landing page redirects through gamerxyt or hubcloud.php for direct stream links
-            val scriptUrl = Regex("""var\s+url\s*=\s*['"]([^'"]+)['"]""").find(doc1.html())?.groupValues?.getOrNull(1)
-            val downloadBtn = doc1.selectFirst("a#download, a.btn-success, a.btn-primary, a[href*='hubcloud.php'], a[href*='/download'], a[href*='/file/'], a:contains(Generate Direct Download Link), a:contains(Download)")
-            val nextUrl = (scriptUrl ?: downloadBtn?.attr("href")) ?: targetUrl
-            val fullNextUrl = when {
-                nextUrl.startsWith("http") -> nextUrl
-                nextUrl.startsWith("//") -> "https:$nextUrl"
-                nextUrl.startsWith("/") -> {
-                    try {
-                        val base = URI(targetUrl)
-                        "${base.scheme}://${base.host}$nextUrl"
-                    } catch (_: Exception) {
-                        nextUrl
-                    }
-                }
-                else -> nextUrl
-            }
-
-            if (fullNextUrl != targetUrl && fullNextUrl.startsWith("http")) {
-                val doc2 = app.get(
-                    fullNextUrl,
-                    headers = mapOf(
-                        "User-Agent" to USER_AGENT,
-                        "Referer" to targetUrl
-                    )
-                ).document
-                val ok2 = parseHubCloudLinks(doc2, fullNextUrl, quality, subtitleCallback, callback)
-                if (ok2) extracted = true
-            }
-
-            extracted
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private suspend fun extractOxxFile(
-        url: String,
-        quality: Pair<String, Int>,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        return try {
-            val cleanUrl = url.trim()
-            val code = cleanUrl.substringAfter("/s/").substringBefore("/").substringBefore("?").trim()
-            if (code.isBlank()) return false
-
-            // OxxFile mirrors frequently rotate domains (new8, new10, oxxfile.info)
-            val host = "https://new10.oxxfile.info"
-            val apiUrl = "$host/api/s/$code/hubcloud/"
-            val doc = app.get(
-                apiUrl,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$host/s/$code/"
-                )
-            ).document
-
-            // 1. First parse any direct links inside the OxxFile response (pixeldrain, workers, etc.)
-            var extracted = parseHubCloudLinks(doc, apiUrl, quality, subtitleCallback, callback)
-
-            // 2. Extract gamerxyt / hubcloud link from script or a#download
-            val scriptUrl = Regex("""var\s+url\s*=\s*['"]([^'"]+)['"]""").find(doc.html())?.groupValues?.getOrNull(1)
-            val downloadBtnUrl = doc.selectFirst("a#download, a.btn-primary")?.attr("href")
-            val targetGamerUrl = (scriptUrl ?: downloadBtnUrl)?.trim() ?: ""
-
-            if (targetGamerUrl.startsWith("http")) {
-                val docGamer = app.get(
-                    targetGamerUrl,
-                    headers = mapOf(
-                        "User-Agent" to USER_AGENT,
-                        "Referer" to "https://hubcloud.ist/"
-                    )
-                ).document
-                val okGamer = parseHubCloudLinks(docGamer, targetGamerUrl, quality, subtitleCallback, callback)
-                if (okGamer) extracted = true
-            }
-
-            // 3. Fallback check for direct hubcloud drive link inside page
-            val driveLink = Regex("""https://hubcloud\.[a-z]+/drive/[a-zA-Z0-9]+""").find(doc.html())?.value
-            if (driveLink != null && !extracted) {
-                val okDrive = extractHubCloud(driveLink, quality, subtitleCallback, callback)
-                if (okDrive) extracted = true
-            }
-
-            extracted
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private suspend fun parseHubCloudLinks(
-        doc: Document,
-        refererUrl: String,
-        quality: Pair<String, Int>,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        var found = false
-        val links = doc.select("a[href]")
-
-        for (link in links) {
-            val href = link.attr("href").trim()
-            if (href.isBlank() || href.startsWith("#") || href.contains("youtube.com") || href.contains("youtu.be")) continue
-
-            // 1. Direct Cloudflare R2 / FastCDN / Worker CDN (Zero buffering instant stream)
-            if (href.contains("r2.cloudflarestorage.com") || href.contains("r2.dev") || href.contains("fastcloud")) {
+            if (!finalDownloadUrl.isNullOrBlank()) {
+                val streamUrl = if (finalDownloadUrl.startsWith("http")) finalDownloadUrl else "https://${URI(url).host}$finalDownloadUrl"
                 callback.invoke(
                     newExtractorLink(
-                        source = "$name - FastCDN",
-                        name = "$name - FastCDN (${quality.first})",
-                        url = href,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = refererUrl
-                        this.quality = quality.second
-                    }
-                )
-                found = true
-            } else if (href.contains("workers.dev")) {
-                val streamUrl = href.replace(" ", "%20")
-                callback.invoke(
-                    newExtractorLink(
-                        source = "$name - Worker FastCDN",
-                        name = "$name - FastCDN (${quality.first})",
+                        source = "$name - HubCloud",
+                        name = "$name - HubCloud Fast Server (${quality.first})",
                         url = streamUrl,
                         type = ExtractorLinkType.VIDEO
                     ) {
-                        this.referer = "https://hubcloud.ist/"
+                        this.referer = url
                         this.quality = quality.second
                     }
                 )
                 found = true
-            } else if (href.contains("vdplay.pages.dev") && href.contains("?u=")) {
-                // 2. VDPlay web player embeds base64 encoded direct stream
-                try {
-                    val b64 = href.substringAfter("?u=").substringBefore("&").trim()
-                    val decodedBytes = Base64.decode(b64, Base64.DEFAULT)
-                    val streamUrl = String(decodedBytes, StandardCharsets.UTF_8).trim()
-                    if (streamUrl.startsWith("http")) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = "$name - VDPlay",
-                                name = "$name - Direct (${quality.first})",
-                                url = streamUrl,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                this.referer = refererUrl
-                                this.quality = quality.second
-                            }
-                        )
-                        found = true
-                    }
-                } catch (_: Exception) { }
-            } else if (href.contains("pixeldrain.com") || href.contains("pixeldrain.dev")) {
-                // 3. PixelDrain Direct API
-                val id = href.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
-                if (id.isNotBlank()) {
-                    val streamUrl = "https://pixeldrain.com/api/file/$id"
+            }
+
+            doc.select("a[href*='pixeldrain']").forEach { pLink ->
+                val pHref = pLink.attr("href")
+                val pId = pHref.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
+                if (pId.isNotBlank()) {
                     callback.invoke(
                         newExtractorLink(
                             source = "$name - PixelDrain",
                             name = "$name - PixelDrain (${quality.first})",
-                            url = streamUrl,
+                            url = "https://pixeldrain.com/api/file/$pId",
                             type = ExtractorLinkType.VIDEO
                         ) {
                             this.referer = "https://pixeldrain.com/"
@@ -728,27 +554,8 @@ class CineVoodProvider : MainAPI() {
                     )
                     found = true
                 }
-            } else if (href.endsWith(".mp4") || href.endsWith(".mkv") || href.contains(".m3u8")) {
-                // 4. Direct video files
-                callback.invoke(
-                    newExtractorLink(
-                        source = "$name - Direct Stream",
-                        name = "$name - Stream (${quality.first})",
-                        url = href,
-                        type = if (href.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = refererUrl
-                        this.quality = quality.second
-                    }
-                )
-                found = true
-            } else if (href.contains("gofile.io") || href.contains("streamtape") || href.contains("vidhide")) {
-                try {
-                    loadExtractor(href, refererUrl, subtitleCallback, callback)
-                    found = true
-                } catch (_: Exception) { }
             }
-        }
+        } catch (e: Exception) { }
         return found
     }
 
@@ -758,67 +565,78 @@ class CineVoodProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        return try {
-            val doc = app.get(url, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://cinevood.rocks/")).document
-            var extracted = false
-            val links = doc.select("a[href]")
+        var found = false
+        try {
+            val res = app.get(
+                url,
+                headers = mapOf("User-Agent" to USER_AGENT, "Referer" to BYPASS_REFERER),
+                timeout = 20
+            )
+            val doc = res.document
+            val links = doc.select("a[href*='fastdl'], a[href*='direct'], a[href*='pixeldrain'], a.btn[href]")
+
             for (link in links) {
-                val streamHref = link.attr("href").trim()
-                if (streamHref.isBlank() || streamHref.startsWith("#")) continue
-                if (streamHref.contains("pixeldrain.com") || streamHref.contains("pixeldrain.dev")) {
-                    val id = streamHref.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
-                    if (id.isNotEmpty()) {
+                val href = link.attr("href")
+                if (href.contains("pixeldrain")) {
+                    val pId = href.substringAfter("/u/").substringAfter("/file/").substringBefore("?").trim()
+                    if (pId.isNotBlank()) {
                         callback.invoke(
                             newExtractorLink(
-                                source = "$name - GDFlix (PixelDrain)",
-                                name = "$name - PixelDrain (${quality.first})",
-                                url = "https://pixeldrain.com/api/file/$id",
+                                source = "$name - FastDrive",
+                                name = "$name - FastDrive (${quality.first})",
+                                url = "https://pixeldrain.com/api/file/$pId",
                                 type = ExtractorLinkType.VIDEO
                             ) {
                                 this.referer = "https://pixeldrain.com/"
                                 this.quality = quality.second
                             }
                         )
-                        extracted = true
+                        found = true
                     }
-                } else if (streamHref.contains("hubcloud") || streamHref.contains("vifix.site")) {
-                    val ok = extractHubCloud(streamHref, quality, subtitleCallback, callback)
-                    if (ok) extracted = true
-                } else if (streamHref.contains("drive.google") || streamHref.contains("gofile.io")) {
-                    try {
-                        loadExtractor(streamHref, url, subtitleCallback, callback)
-                        extracted = true
-                    } catch (_: Exception) { }
-                } else if (streamHref.endsWith(".mp4") || streamHref.endsWith(".mkv") || streamHref.contains(".m3u8")) {
+                } else if (href.endsWith(".mp4") || href.endsWith(".mkv")) {
                     callback.invoke(
                         newExtractorLink(
-                            source = "$name - GDFlix Direct",
-                            name = "$name - Direct (${quality.first})",
-                            url = streamHref,
-                            type = if (streamHref.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                            source = "$name - GDFlix",
+                            name = "$name - GDFlix Direct (${quality.first})",
+                            url = href,
+                            type = ExtractorLinkType.VIDEO
                         ) {
                             this.referer = url
                             this.quality = quality.second
                         }
                     )
-                    extracted = true
+                    found = true
                 }
             }
-            extracted
-        } catch (_: Exception) {
-            false
+        } catch (e: Exception) { }
+        return found
+    }
+
+    private fun getQualityFromName(name: String): Pair<String, Int> {
+        val lower = name.lowercase()
+        return when {
+            lower.contains("4k") || lower.contains("2160p") -> "4K UHD" to Qualities.P2160.value
+            lower.contains("1080p") || lower.contains("fhd") -> "1080p FHD" to Qualities.P1080.value
+            lower.contains("720p") || lower.contains("hd") -> "720p HD" to Qualities.P720.value
+            lower.contains("480p") || lower.contains("sd") -> "480p SD" to Qualities.P480.value
+            else -> "HD" to Qualities.P720.value
         }
     }
 
-    private fun determineQuality(text: String): Pair<String, Int> {
-        val lower = text.lowercase()
+    private fun fixImageUrl(url: String): String {
+        val clean = url.trim()
         return when {
-            lower.contains("2160") || lower.contains("4k") -> Pair("4K 2160p", Qualities.P2160.value)
-            lower.contains("1080") -> Pair("1080p FHD", Qualities.P1080.value)
-            lower.contains("720") -> Pair("720p HD", Qualities.P720.value)
-            lower.contains("480") -> Pair("480p SD", Qualities.P480.value)
-            lower.contains("360") -> Pair("360p", Qualities.P360.value)
-            else -> Pair("HD", Qualities.P720.value)
+            clean.startsWith("//") -> "https:$clean"
+            clean.startsWith("http") -> clean
+            else -> "$mainUrl/$clean".replace("//", "/")
         }
+    }
+
+    private fun String.cleanTitle(): String {
+        return this
+            .replace(Regex("""\s*\[.*?\]|\(.*?\)\s*"""), " ")
+            .replace(Regex("""\s*(Download|Watch Online|Free|Hindi Dubbed|Dual Audio|Multi Audio|Full Movie|4K|1080p|720p|480p|WEB-DL|HDRip|HD|Esubs|ESub)\s*""", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
     }
 }
