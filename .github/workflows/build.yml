@@ -81,6 +81,10 @@ jobs:
                   'name': 'AnimeSalt',
                   'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
               },
+              'RareAnimesPlugin': {
+                  'name': 'RareAnimes',
+                  'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
+              },
               'MLWBDPlugin': {
                   'name': 'MLWBD',
                   'iconUrl': 'https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png'
