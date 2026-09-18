@@ -169,9 +169,7 @@ class FlixVisionProvider : MainAPI() {
                             }
                         )
                     }
-                } catch (e: Exception) {
-                    // Continue with other seasons if one fails
-                }
+                } catch (e: Exception) { }
             }
 
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
@@ -204,7 +202,7 @@ class FlixVisionProvider : MainAPI() {
         val title = linkData.title ?: ""
         var loadedAny = false
 
-        // 1. [FLIXVISION 1] - SmashyStream Server & Direct
+        // 1. SmashyStream Server & Direct
         val smashyUrls = if (isMovie) {
             listOf(
                 "https://embed.smashystream.com/playere.php?tmdb=$tmdbId",
@@ -223,7 +221,7 @@ class FlixVisionProvider : MainAPI() {
             } catch (e: Exception) { }
         }
 
-        // 2. [FLIXVISION 2] - MultiEmbed DirectStream
+        // 2. MultiEmbed DirectStream
         val multiEmbedUrl = if (isMovie) {
             "https://multiembed.mov/directstream.php?video_id=$tmdbId&tmdb=1"
         } else {
@@ -234,7 +232,7 @@ class FlixVisionProvider : MainAPI() {
             extractEmbeddedStreams(multiEmbedUrl, "1080p - 720p - 480p [FLIXVISION2]", subtitleCallback, callback)
         } catch (e: Exception) { }
 
-        // 3. [FLIXVISION 3] - AutoEmbed & 2Embed VIP
+        // 3. AutoEmbed & 2Embed VIP
         val autoEmbedUrl = if (isMovie) {
             "https://autoembed.co/movie/tmdb/$tmdbId"
         } else {
@@ -260,7 +258,7 @@ class FlixVisionProvider : MainAPI() {
             } catch (e: Exception) { }
         }
 
-        // 4. [FLIXVISION 5] - VSEmbed (Cloudnestra)
+        // 4. VSEmbed
         val vsEmbedUrl = if (isMovie) {
             "https://vsembed.ru/embed/movie/$tmdbId"
         } else {
@@ -271,7 +269,7 @@ class FlixVisionProvider : MainAPI() {
             extractEmbeddedStreams(vsEmbedUrl, "1080p - 720p - 480p [FLIXVISION5]", subtitleCallback, callback)
         } catch (e: Exception) { }
 
-        // 5. [VIDSRC] - VidSrc Multi-Mirror
+        // 5. VidSrc Multi-Mirror
         val vidsrcUrls = mutableListOf<String>()
         if (isMovie) {
             vidsrcUrls.add("https://vidsrc.to/embed/movie/$tmdbId")
@@ -297,7 +295,7 @@ class FlixVisionProvider : MainAPI() {
             } catch (e: Exception) { }
         }
 
-        // 6. [FVSTREAM 1] - AllMovieLand (English & Hindi Dubbed Direct Streams)
+        // 6. AllMovieLand
         try {
             val queryClean = title.replace(Regex("[^a-zA-Z0-9\\s]"), " ").trim()
             val allMovieLandUrls = listOf("https://allmovieland.you", "https://allmovieland.fun")
@@ -322,7 +320,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 7. [FVSTREAM 2] - RidoMovies / Closeload Direct
+        // 7. RidoMovies
         try {
             val ridoUrls = listOf(
                 "https://ridomovies.tv/movies/${title.lowercase().replace(" ", "-")}",
@@ -336,7 +334,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 8. [FVSTREAM 3] - VixCloud & StreamingUnity Direct
+        // 8. VixCloud
         try {
             val vixUrls = listOf(
                 "https://vixcloud.co/playlist/$tmdbId",
@@ -350,7 +348,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 9. [FVSTREAM 4 & 5] - Movies123 & Noxx TV
+        // 9. Movies123 & Noxx
         try {
             val m123Url = "https://movies123.pk/?s=${URLEncoder.encode(title, "UTF-8")}"
             extractEmbeddedStreams(m123Url, "1080p - [FVSTREAM 4] - [DIRECT] - English", subtitleCallback, callback)
@@ -361,7 +359,7 @@ class FlixVisionProvider : MainAPI() {
             extractEmbeddedStreams(noxxUrl, "1080p - [FVSTREAM 5] - [DIRECT] - English", subtitleCallback, callback)
         } catch (e: Exception) { }
 
-        // 10. [MOFLIX] - Direct Stream
+        // 10. Moflix
         try {
             val moflixUrl = if (isMovie) {
                 "https://moflix-stream.xyz/api/v1/titles/tmdb|movie|$tmdbId?loader=titlePage"
@@ -372,7 +370,7 @@ class FlixVisionProvider : MainAPI() {
             extractStreamsFromJson(res, "1080p - [MOFLIX] - [DIRECT] - English/Multi", callback)
         } catch (e: Exception) { }
 
-        // 11. [FLIXVISION HINDI 1] - HindiLinks4U
+        // 11. HindiLinks4U
         try {
             val hindiQuery = URLEncoder.encode(title, "UTF-8")
             val hindiLinksHosts = listOf("https://hindilinks4u.guru", "https://hindilinks4u.cam", "https://hindilinks4u.to")
@@ -397,7 +395,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 12. [FLIXVISION HINDI 2] - HindiMoviesTV
+        // 12. HindiMoviesTV
         try {
             val hmtvUrl = "https://www.hindimoviestv.com/?s=${URLEncoder.encode(title, "UTF-8")}"
             val searchDoc = app.get(hmtvUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to GOOGLE_REFERER)).document
@@ -415,7 +413,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 13. [FLIXVISION REGIONAL] - MovieRulz
+        // 13. MovieRulz
         try {
             val mrMirrors = listOf("https://ww9.watchmovierulz.ws", "https://www.movierulz.cr", "https://movierulz.com.ci")
             for (mrHost in mrMirrors) {
@@ -439,7 +437,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (e: Exception) { }
 
-        // 14. [FLIXVISION ASIAN] - KissAsian
+        // 14. KissAsian
         try {
             val kissHosts = listOf("https://kissasiantv.to", "https://kissasian.pe")
             for (kHost in kissHosts) {
