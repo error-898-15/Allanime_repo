@@ -167,7 +167,7 @@ class FlixVisionProvider : MainAPI() {
                             }
                         )
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
                     // Continue with other seasons if one fails
                 }
             }
@@ -190,7 +190,7 @@ class FlixVisionProvider : MainAPI() {
     ): Boolean {
         val linkData = try {
             parseJson<FlixVisionLinkData>(data)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             return false
         }
 
@@ -218,7 +218,7 @@ class FlixVisionProvider : MainAPI() {
             try {
                 if (loadExtractor(url, "https://embed.smashystream.com/", subtitleCallback, callback)) loadedAny = true
                 extractEmbeddedStreams(url, "1080p - 720p - 480p - [FLIXVISION1]", subtitleCallback, callback)
-            } catch (_: Exception) { }
+            } catch (e: Exception) { }
         }
 
         // 2. [FLIXVISION 2] - MultiEmbed DirectStream
@@ -230,7 +230,7 @@ class FlixVisionProvider : MainAPI() {
         try {
             if (loadExtractor(multiEmbedUrl, "https://multiembed.mov/", subtitleCallback, callback)) loadedAny = true
             extractEmbeddedStreams(multiEmbedUrl, "1080p - 720p - 480p [FLIXVISION2]", subtitleCallback, callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 3. [FLIXVISION 3] - AutoEmbed & 2Embed VIP
         val autoEmbedUrl = if (isMovie) {
@@ -241,7 +241,7 @@ class FlixVisionProvider : MainAPI() {
         try {
             if (loadExtractor(autoEmbedUrl, "https://autoembed.co/", subtitleCallback, callback)) loadedAny = true
             extractEmbeddedStreams(autoEmbedUrl, "1080p - 720p - 480p-[FLIXVISION3]", subtitleCallback, callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         val twoEmbedUrls = mutableListOf<String>()
         if (isMovie) {
@@ -255,7 +255,7 @@ class FlixVisionProvider : MainAPI() {
             try {
                 if (loadExtractor(u2, "https://www.2embed.cc/", subtitleCallback, callback)) loadedAny = true
                 extractEmbeddedStreams(u2, "1080p - 720p - 480p-[FLIXVISION3] 2Embed", subtitleCallback, callback)
-            } catch (_: Exception) { }
+            } catch (e: Exception) { }
         }
 
         // 4. [FLIXVISION 5] - VSEmbed (Cloudnestra)
@@ -267,7 +267,7 @@ class FlixVisionProvider : MainAPI() {
         try {
             if (loadExtractor(vsEmbedUrl, "https://vsembed.ru/", subtitleCallback, callback)) loadedAny = true
             extractEmbeddedStreams(vsEmbedUrl, "1080p - 720p - 480p [FLIXVISION5]", subtitleCallback, callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 5. [VIDSRC] - VidSrc Multi-Mirror
         val vidsrcUrls = mutableListOf<String>()
@@ -292,7 +292,7 @@ class FlixVisionProvider : MainAPI() {
             try {
                 if (loadExtractor(vUrl, "https://vidsrc.to/", subtitleCallback, callback)) loadedAny = true
                 extractEmbeddedStreams(vUrl, "1080p - [VIDSRC] - [DIRECT]", subtitleCallback, callback)
-            } catch (_: Exception) { }
+            } catch (e: Exception) { }
         }
 
         // 6. [FVSTREAM 1] - AllMovieLand (English & Hindi Dubbed Direct Streams)
@@ -314,9 +314,9 @@ class FlixVisionProvider : MainAPI() {
                         extractEmbeddedStreams(targetLink, "1080p - [FVSTREAM 1] · [DIRECT] · Hindi/English", subtitleCallback, callback)
                         break
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 7. [FVSTREAM 2] - RidoMovies / Closeload Direct
         try {
@@ -328,9 +328,9 @@ class FlixVisionProvider : MainAPI() {
                 try {
                     if (loadExtractor(rUrl, "https://closeload.top/", subtitleCallback, callback)) loadedAny = true
                     extractEmbeddedStreams(rUrl, "1080p · [FVSTREAM 2] · [DIRECT] · English", subtitleCallback, callback)
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 8. [FVSTREAM 3] - VixCloud & StreamingUnity Direct
         try {
@@ -342,20 +342,20 @@ class FlixVisionProvider : MainAPI() {
                 try {
                     if (loadExtractor(vix, "https://vixcloud.co/", subtitleCallback, callback)) loadedAny = true
                     extractEmbeddedStreams(vix, "1080p · [FVSTREAM 3] · [DIRECT] · English", subtitleCallback, callback)
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 9. [FVSTREAM 4 & 5] - Movies123 & Noxx TV
         try {
             val m123Url = "https://movies123.pk/?s=${URLEncoder.encode(title, "UTF-8")}"
             extractEmbeddedStreams(m123Url, "1080p - [FVSTREAM 4] · [DIRECT] · English", subtitleCallback, callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         try {
             val noxxUrl = if (isMovie) "https://noxx.to/movie/${title.lowercase().replace(" ", "-")}" else "https://noxx.to/tv/${title.lowercase().replace(" ", "-")}/season/$season/episode/$episode"
             extractEmbeddedStreams(noxxUrl, "1080p · [FVSTREAM 5] · [DIRECT] · English", subtitleCallback, callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 10. [MOFLIX] - Direct Stream
         try {
@@ -366,7 +366,7 @@ class FlixVisionProvider : MainAPI() {
             }
             val res = app.get(moflixUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://moflix-stream.xyz/")).text
             extractStreamsFromJson(res, "1080p - [MOFLIX] - [DIRECT] - English/Multi", callback)
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 11. [FLIXVISION HINDI 1] - HindiLinks4U
         try {
@@ -387,9 +387,9 @@ class FlixVisionProvider : MainAPI() {
                         extractEmbeddedStreams(movieHref, "1080p - [FLIXVISION HINDI 1] HindiLinks4U", subtitleCallback, callback)
                         break
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 12. [FLIXVISION HINDI 2] - HindiMoviesTV
         try {
@@ -405,7 +405,7 @@ class FlixVisionProvider : MainAPI() {
                 }
                 extractEmbeddedStreams(itemHref, "1080p - [FLIXVISION HINDI 2] HindiMoviesTV", subtitleCallback, callback)
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 13. [FLIXVISION REGIONAL] - MovieRulz
         try {
@@ -425,9 +425,9 @@ class FlixVisionProvider : MainAPI() {
                         extractEmbeddedStreams(movieLink, "1080p - [FLIXVISION MULTI] MovieRulz (Regional)", subtitleCallback, callback)
                         break
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         // 14. [FLIXVISION ASIAN] - KissAsian
         try {
@@ -442,9 +442,9 @@ class FlixVisionProvider : MainAPI() {
                         extractEmbeddedStreams(fullLink, "1080p - [FLIXVISION ASIAN] KissAsian", subtitleCallback, callback)
                         break
                     }
-                } catch (_: Exception) { }
+                } catch (e: Exception) { }
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
 
         return loadedAny
     }
@@ -466,7 +466,7 @@ class FlixVisionProvider : MainAPI() {
                 if (clean.startsWith("http")) {
                     try {
                         loadExtractor(clean, pageUrl, subtitleCallback, callback)
-                    } catch (_: Exception) { }
+                    } catch (e: Exception) { }
                 }
             }
 
@@ -501,7 +501,7 @@ class FlixVisionProvider : MainAPI() {
                     }
                 )
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
     }
 
     private fun extractStreamsFromJson(
@@ -525,7 +525,7 @@ class FlixVisionProvider : MainAPI() {
                     }
                 )
             }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
     }
 }
 
