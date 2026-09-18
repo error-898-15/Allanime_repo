@@ -150,7 +150,7 @@ class RareAnimesProvider : MainAPI() {
                 val label = a.text().trim().ifEmpty { "Stream" }
                 if (link.isNotBlank()) ServerLink(label, link) else null
             }
-            val movieData = toJson(RareAnimesEpisodeData(url, movieServers))
+            val movieData = RareAnimesEpisodeData(url, movieServers).toJson()
             return newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = poster
@@ -203,7 +203,7 @@ class RareAnimesProvider : MainAPI() {
             }
 
             if (servers.isNotEmpty()) {
-                val epData = toJson(RareAnimesEpisodeData(postUrl, servers))
+                val epData = RareAnimesEpisodeData(postUrl, servers).toJson()
                 val epName = if (!rawEpTitle.isNullOrBlank()) {
                     "Episode $epNum - $rawEpTitle"
                 } else {
@@ -219,7 +219,7 @@ class RareAnimesProvider : MainAPI() {
                 )
             }
         }
-        return episodes.sortedBy { it.episode }
+        return episodes.distinctBy { it.data }.sortedWith(compareBy<Episode> { it.episode ?: 1 })
     }
 
     override suspend fun loadLinks(
@@ -351,7 +351,7 @@ class RareAnimesProvider : MainAPI() {
         )
         val megaMatch = Regex("""https?://mega\.nz/(?:file|embed)/[^\s"'<>]+""").find(response.text) ?: return false
         val megaUrl = megaMatch.value
-        return loadExtractor(megaUrl, subtitleCallback, callback)
+        return loadExtractor(megaUrl, postUrl, subtitleCallback, callback)
     }
 
     private suspend fun extractDLBeta(
@@ -443,7 +443,7 @@ class RareAnimesProvider : MainAPI() {
             ).forEach { link ->
                 callback.invoke(link)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // Sub-stream generation optional
         }
         return true
