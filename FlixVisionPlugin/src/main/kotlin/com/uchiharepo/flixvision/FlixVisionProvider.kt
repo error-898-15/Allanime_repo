@@ -481,7 +481,7 @@ class FlixVisionProvider : MainAPI() {
             }
 
             val m3u8Regex = Regex("""https?://[^"'<>\s]+\.m3u8[^"'<>\s]*""")
-            m3u8Regex.findAll(text).forEach { match ->
+            for (match in m3u8Regex.findAll(text)) {
                 val streamUrl = match.value
                 callback.invoke(
                     newExtractorLink(
@@ -497,7 +497,7 @@ class FlixVisionProvider : MainAPI() {
             }
 
             val mp4Regex = Regex("""https?://[^"'<>\s]+\.(?:mp4|mkv)[^"'<>\s]*""")
-            mp4Regex.findAll(text).forEach { match ->
+            for (match in mp4Regex.findAll(text)) {
                 val streamUrl = match.value
                 callback.invoke(
                     newExtractorLink(
@@ -521,7 +521,7 @@ class FlixVisionProvider : MainAPI() {
     ) {
         try {
             val streamRegex = Regex("""https?://[^"'<>\s]+\.(?:m3u8|mp4)[^"'<>\s]*""")
-            streamRegex.findAll(jsonString).forEach { match ->
+            for (match in streamRegex.findAll(jsonString)) {
                 val url = match.value
                 val isHls = url.contains(".m3u8")
                 callback.invoke(
