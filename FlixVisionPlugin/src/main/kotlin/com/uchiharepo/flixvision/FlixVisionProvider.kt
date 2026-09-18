@@ -299,7 +299,7 @@ class FlixVisionProvider : MainAPI() {
 
         // 6. [FVSTREAM 1] - AllMovieLand (English & Hindi Dubbed Direct Streams)
         try {
-            val queryClean = title.replace(Regex("""[^a-zA-Z0-9\s]"""), " ").trim()
+            val queryClean = title.replace(Regex("[^a-zA-Z0-9\\s]"), " ").trim()
             val allMovieLandUrls = listOf("https://allmovieland.you", "https://allmovieland.fun")
             for (domain in allMovieLandUrls) {
                 try {
@@ -315,7 +315,7 @@ class FlixVisionProvider : MainAPI() {
                                 loadExtractor(cleanSrc, domain, subtitleCallback, callback)
                             } catch (e: Exception) { }
                         }
-                        extractEmbeddedStreams(targetLink, "1080p - [FVSTREAM 1] · [DIRECT] · Hindi/English", subtitleCallback, callback)
+                        extractEmbeddedStreams(targetLink, "1080p - [FVSTREAM 1] - [DIRECT] - Hindi/English", subtitleCallback, callback)
                         break
                     }
                 } catch (e: Exception) { }
@@ -331,7 +331,7 @@ class FlixVisionProvider : MainAPI() {
             for (rUrl in ridoUrls) {
                 try {
                     if (loadExtractor(rUrl, "https://closeload.top/", subtitleCallback, callback)) loadedAny = true
-                    extractEmbeddedStreams(rUrl, "1080p · [FVSTREAM 2] · [DIRECT] · English", subtitleCallback, callback)
+                    extractEmbeddedStreams(rUrl, "1080p - [FVSTREAM 2] - [DIRECT] - English", subtitleCallback, callback)
                 } catch (e: Exception) { }
             }
         } catch (e: Exception) { }
@@ -345,7 +345,7 @@ class FlixVisionProvider : MainAPI() {
             for (vix in vixUrls) {
                 try {
                     if (loadExtractor(vix, "https://vixcloud.co/", subtitleCallback, callback)) loadedAny = true
-                    extractEmbeddedStreams(vix, "1080p · [FVSTREAM 3] · [DIRECT] · English", subtitleCallback, callback)
+                    extractEmbeddedStreams(vix, "1080p - [FVSTREAM 3] - [DIRECT] - English", subtitleCallback, callback)
                 } catch (e: Exception) { }
             }
         } catch (e: Exception) { }
@@ -353,12 +353,12 @@ class FlixVisionProvider : MainAPI() {
         // 9. [FVSTREAM 4 & 5] - Movies123 & Noxx TV
         try {
             val m123Url = "https://movies123.pk/?s=${URLEncoder.encode(title, "UTF-8")}"
-            extractEmbeddedStreams(m123Url, "1080p - [FVSTREAM 4] · [DIRECT] · English", subtitleCallback, callback)
+            extractEmbeddedStreams(m123Url, "1080p - [FVSTREAM 4] - [DIRECT] - English", subtitleCallback, callback)
         } catch (e: Exception) { }
 
         try {
             val noxxUrl = if (isMovie) "https://noxx.to/movie/${title.lowercase().replace(" ", "-")}" else "https://noxx.to/tv/${title.lowercase().replace(" ", "-")}/season/$season/episode/$episode"
-            extractEmbeddedStreams(noxxUrl, "1080p · [FVSTREAM 5] · [DIRECT] · English", subtitleCallback, callback)
+            extractEmbeddedStreams(noxxUrl, "1080p - [FVSTREAM 5] - [DIRECT] - English", subtitleCallback, callback)
         } catch (e: Exception) { }
 
         // 10. [MOFLIX] - Direct Stream
@@ -480,7 +480,7 @@ class FlixVisionProvider : MainAPI() {
                 }
             }
 
-            val m3u8Regex = Regex("""https?://[^"'<>\s]+\.m3u8[^"'<>\s]*""")
+            val m3u8Regex = Regex("https?://[^\"'<>\\s]+\\.m3u8[^\"'<>\\s]*")
             for (match in m3u8Regex.findAll(text)) {
                 val streamUrl = match.value
                 callback.invoke(
@@ -496,7 +496,7 @@ class FlixVisionProvider : MainAPI() {
                 )
             }
 
-            val mp4Regex = Regex("""https?://[^"'<>\s]+\.(?:mp4|mkv)[^"'<>\s]*""")
+            val mp4Regex = Regex("https?://[^\"'<>\\s]+\\.(?:mp4|mkv)[^\"'<>\\s]*")
             for (match in mp4Regex.findAll(text)) {
                 val streamUrl = match.value
                 callback.invoke(
@@ -520,7 +520,7 @@ class FlixVisionProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val streamRegex = Regex("""https?://[^"'<>\s]+\.(?:m3u8|mp4)[^"'<>\s]*""")
+            val streamRegex = Regex("https?://[^\"'<>\\s]+\\.(?:m3u8|mp4)[^\"'<>\\s]*")
             for (match in streamRegex.findAll(jsonString)) {
                 val url = match.value
                 val isHls = url.contains(".m3u8")
