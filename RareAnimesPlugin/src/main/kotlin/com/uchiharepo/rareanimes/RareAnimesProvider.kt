@@ -220,7 +220,7 @@ class RareAnimesProvider : MainAPI() {
         val episodes = ArrayList<Episode>()
         val root = contentEl ?: document
 
-        // 1. Check if post has intermediate archive links (e.g. store.animetoonhindi.com/archives/... or rareanimes.mov/archives/...)
+        // 1. Check for intermediate archive links
         val archiveLinks = root.select("a[href*='/archives/'], a[href*='store.animetoonhindi.com'], a[href*='animetoonhindi.com']").mapNotNull { a ->
             val href = a.attr("href").trim()
             if (href.startsWith("http") && (href.contains("archives") || href.contains("store."))) href else null
@@ -312,7 +312,7 @@ class RareAnimesProvider : MainAPI() {
             }
         }
 
-        // 3. Fallback: Parse direct episode links or table rows from content only
+        // 3. Fallback: Parse direct episode links
         if (episodes.isEmpty()) {
             val allServerLinks = root.select("a[href*='codedew.com'], a[href*='hubcloud'], a[href*='pixeldrain'], a[href*='drive.google'], a[href*='mega.nz'], a[href*='streamwish'], a[href*='filepress']")
             for ((idx, a) in allServerLinks.withIndex()) {
@@ -433,7 +433,6 @@ class RareAnimesProvider : MainAPI() {
             } catch (e: Exception) { }
         }
 
-        // 1. MultiQuality / Argon embed
         val iframeMatch = Regex("""https?://argon\.razorshell\.space/embed/[A-Za-z0-9]+""").find(html)
         if (iframeMatch != null) {
             if (extractMultiQuality(iframeMatch.value, "https://codedew.com/", callback)) {
@@ -441,17 +440,19 @@ class RareAnimesProvider : MainAPI() {
             }
         }
 
-        // 2. Other iframes (Mega, StreamWish, etc.)
         val otherIframes = Regex("""<iframe[^>]+src=["']([^"']+)["']""").findAll(html)
         for (ifm in otherIframes) {
             val src = ifm.groupValues[1].trim()
             if (src.contains("argon.razorshell.space")) continue
-            try {
+            if (src.contains("mega.nz")) {
                 if (loadExtractor(src, zipperUrl, subtitleCallback, callback)) success = true
-            } catch (e: Exception) { }
+            } else {
+                try {
+                    if (loadExtractor(src, zipperUrl, subtitleCallback, callback)) success = true
+                } catch (e: Exception) { }
+            }
         }
 
-        // 3. Player sources JSON
         val jsonMatch = Regex("""let\s+playerSources\s*=\s*(\[[^;]+\]);""").find(html)
             ?: Regex("""var\s+playerSources\s*=\s*(\[[^;]+\]);""").find(html)
             ?: Regex("""sources\s*:\s*(\[[^;\]]+\])""").find(html)
@@ -474,7 +475,6 @@ class RareAnimesProvider : MainAPI() {
 
                     val resolvedTarget = payloadStream ?: payloadDirect ?: rawDirect ?: rawStream ?: continue
 
-                    // Google Drive / UserContent Stream
                     if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true) || resolvedTarget.contains("drive.google.com", ignoreCase = true)) {
                         callback.invoke(
                             newExtractorLink(
@@ -489,9 +489,7 @@ class RareAnimesProvider : MainAPI() {
                             }
                         )
                         success = true
-                    }
-                    // PixelDrain Direct API
-                    else if (resolvedTarget.contains("pixeldra.in", ignoreCase = true) || resolvedTarget.contains("pixeldrain.com", ignoreCase = true)) {
+                    } else if (resolvedTarget.contains("pixeldra.in", ignoreCase = true) || resolvedTarget.contains("pixeldrain.com", ignoreCase = true)) {
                         val fileId = resolvedTarget.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
                         if (fileId.isNotBlank()) {
                             val directDownload = "https://pixeldrain.com/api/file/$fileId?download"
@@ -513,9 +511,7 @@ class RareAnimesProvider : MainAPI() {
                             loadExtractor("https://pixeldrain.com/u/$fileId", "https://pixeldrain.com/", subtitleCallback, callback)
                             success = true
                         }
-                    }
-                    // Fast Cloud / R2 direct storage
-                    else if (resolvedTarget.contains("r2.dev", ignoreCase = true) || resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true) || resolvedTarget.contains("workers.dev", ignoreCase = true)) {
+                    } else if (resolvedTarget.contains("r2.dev", ignoreCase = true) || resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true) || resolvedTarget.contains("workers.dev", ignoreCase = true)) {
                         callback.invoke(
                             newExtractorLink(
                                 source = this.name,
@@ -529,9 +525,7 @@ class RareAnimesProvider : MainAPI() {
                             }
                         )
                         success = true
-                    }
-                    // Direct MP4/MKV
-                    else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
+                    } else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
                         callback.invoke(
                             newExtractorLink(
                                 source = this.name,
@@ -545,9 +539,7 @@ class RareAnimesProvider : MainAPI() {
                             }
                         )
                         success = true
-                    }
-                    // Direct HLS
-                    else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
+                    } else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
                         callback.invoke(
                             newExtractorLink(
                                 source = this.name,
@@ -566,19 +558,18 @@ class RareAnimesProvider : MainAPI() {
                                 referer = "",
                                 quality = Qualities.P1080.value,
                                 name = "$name - HLS Stream ($sourceName)"
-                            ).forEach { link -> callback.invoke(link) }
+                            ).forEach { link ->
+                                callback.invoke(link)
+                            }
                         } catch (t: Throwable) { }
                         success = true
-                    }
-                    // Fallback
-                    else if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
+                    } else if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
                         success = true
                     }
                 }
             }
         }
 
-        // 4. Mega direct match
         val megaMatch = Regex("""https?://mega\.nz/(?:file|embed)/[^\s"'<>]+""").find(html)
         if (megaMatch != null) {
             if (loadExtractor(megaMatch.value, postUrl, subtitleCallback, callback)) {
@@ -666,7 +657,8 @@ class RareAnimesProvider : MainAPI() {
             )
         )
         val megaMatch = Regex("""https?://mega\.nz/(?:file|embed)/[^\s"'<>]+""").find(response.text) ?: return false
-        return loadExtractor(megaMatch.value, postUrl, subtitleCallback, callback)
+        val megaUrl = megaMatch.value
+        return loadExtractor(megaUrl, postUrl, subtitleCallback, callback)
     }
 
     private suspend fun extractDLBeta(
@@ -731,7 +723,6 @@ class RareAnimesProvider : MainAPI() {
                 .replace("\n", "").replace("\r", "").replace(" ", "")
 
             val decodedConfigStr = decodeJuicyCodes(encodedArg) ?: return false
-
             val m3u8Match = Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(decodedConfigStr) ?: return false
             val m3u8Url = m3u8Match.value
 
@@ -741,7 +732,6 @@ class RareAnimesProvider : MainAPI() {
                 "User-Agent" to USER_AGENT
             )
 
-            // Primary M3U8 Master stream with correct Origin/Referer (Bypasses ExoPlayer Error 2004)
             callback.invoke(
                 newExtractorLink(
                     source = this.name,
@@ -755,7 +745,6 @@ class RareAnimesProvider : MainAPI() {
                 }
             )
 
-            // Generate multi-quality sub-streams (1080p, 720p, 360p)
             try {
                 M3u8Helper.generateM3u8(
                     source = this.name,
