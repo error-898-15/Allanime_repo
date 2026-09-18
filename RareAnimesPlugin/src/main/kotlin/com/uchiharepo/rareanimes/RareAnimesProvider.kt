@@ -63,7 +63,6 @@ class RareAnimesProvider : MainAPI() {
     private fun extractImageUrl(element: Element?): String? {
         if (element == null) return null
         val img = if (element.tagName() == "img") element else element.selectFirst("img") ?: return null
-
         val raw = (
             img.attr("srcset").split(",").lastOrNull()?.trim()?.substringBefore(" ")?.ifEmpty { null }
                 ?: img.attr("data-src").ifEmpty {
@@ -72,11 +71,8 @@ class RareAnimesProvider : MainAPI() {
                     }
                 }
         ).trim()
-
         if (raw.isBlank() || raw.startsWith("data:image")) return null
         val cleaned = if (raw.startsWith("//")) "https:$raw" else raw
-
-        // Filter out site logos
         if (cleaned.contains("Rare-Animes", ignoreCase = true) ||
             cleaned.contains("cropped-", ignoreCase = true) ||
             cleaned.contains("favicon", ignoreCase = true)
@@ -94,7 +90,6 @@ class RareAnimesProvider : MainAPI() {
         if (href.isBlank() || !href.startsWith("http") || href.contains("/category/") || href.contains("/tag/")) {
             return null
         }
-
         val posterUrl = extractImageUrl(this)
         val isMovie = href.contains("-movie-", ignoreCase = true) ||
             href.contains("/movies/", ignoreCase = true) ||
@@ -124,15 +119,12 @@ class RareAnimesProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).document
         val title = document.selectFirst("h1.entry-title, h1")?.text()?.trim() ?: "RareAnimes"
-
         val poster = extractImageUrl(document.selectFirst(".post-thumbnail img, figure img, .attachment-herald-lay-f1"))
             ?: document.selectFirst("meta[property='og:image']")?.attr("content")
             ?: document.select(".entry-content img").mapNotNull { extractImageUrl(it) }.firstOrNull()
-
         val plot = document.selectFirst(".entry-content p, meta[property='og:description']")?.let {
             if (it.tagName() == "meta") it.attr("content") else it.text()
         }?.trim()
-
         val tags = document.select(".herald-tags a, .genres a, .entry-categories a").map { it.text().trim() }.distinct()
         val yearMatch = Regex("""\b(19\d\d|20\d\d)\b""").find(title)
         val year = yearMatch?.groupValues?.get(1)?.toIntOrNull()
@@ -187,7 +179,6 @@ class RareAnimesProvider : MainAPI() {
             val epNum = epMatch.groupValues[1].toIntOrNull() ?: continue
             val rawEpTitle = epMatch.groupValues.getOrNull(2)?.trim()?.replace(Regex("""<[^>]+>"""), "")?.trim()
 
-            // Find all codedew links in this section
             val linkMatches = Regex(
                 """<a\s+[^>]*href=["'](https?://codedew\.com/[^"']+)["'][^>]*>([\s\S]*?)</a>""",
                 RegexOption.IGNORE_CASE
@@ -203,23 +194,24 @@ class RareAnimesProvider : MainAPI() {
             }
 
             if (servers.isNotEmpty()) {
-                val epData = RareAnimesEpisodeData(postUrl, servers).toJson()
-                val epName = if (!rawEpTitle.isNullOrBlank()) {
+                val epTitle = if (!rawEpTitle.isNullOrBlank()) {
                     "Episode $epNum - $rawEpTitle"
                 } else {
                     "Episode $epNum"
                 }
+                val epData = RareAnimesEpisodeData(postUrl, servers).toJson()
 
                 episodes.add(
                     newEpisode(epData) {
-                        this.name = epName
+                        this.name = epTitle
                         this.episode = epNum
                         this.posterUrl = fallbackThumb
                     }
                 )
             }
         }
-        return episodes.distinctBy { it.data }.sortedWith(compareBy<Episode> { it.episode ?: 1 })
+
+        return episodes.distinctBy { it.episode }
     }
 
     override suspend fun loadLinks(
@@ -242,28 +234,31 @@ class RareAnimesProvider : MainAPI() {
             try {
                 val sName = server.name
                 val sUrl = server.url
-
                 when {
+                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) -> {
+                        if (extractMultiQuality(sUrl, postUrl, callback)) loadedAny = true
+                    }
                     sName.contains("StreamBeta", ignoreCase = true) -> {
-                        if (extractStreamBeta(sUrl, postUrl, callback)) loadedAny = true
+                        if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
                     }
                     sName.contains("Mega", ignoreCase = true) -> {
                         if (extractMega(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
-                    }
-                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) -> {
-                        if (extractMultiQuality(sUrl, postUrl, callback)) loadedAny = true
                     }
                     sName.contains("DLBeta", ignoreCase = true) -> {
                         if (extractDLBeta(sUrl, postUrl, callback)) loadedAny = true
                     }
                     else -> {
-                        if (loadExtractor(sUrl, postUrl, subtitleCallback, callback)) {
+                        if (extractMultiQuality(sUrl, postUrl, callback)) {
+                            loadedAny = true
+                        } else if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) {
+                            loadedAny = true
+                        } else if (loadExtractor(sUrl, postUrl, subtitleCallback, callback)) {
                             loadedAny = true
                         }
                     }
                 }
             } catch (e: Exception) {
-                // Continue to next server
+                // Continue to next server gracefully
             }
         }
 
@@ -273,6 +268,7 @@ class RareAnimesProvider : MainAPI() {
     private suspend fun extractStreamBeta(
         zipperUrl: String,
         postUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         var success = false
@@ -292,36 +288,25 @@ class RareAnimesProvider : MainAPI() {
         }
 
         for (src in sources) {
-            val streamUrl = src.streamUrl
-            val directUrl = src.url
             val sourceName = src.name ?: "StreamBeta"
+            val rawStream = src.streamUrl
+            val rawDirect = src.url
 
-            if (!streamUrl.isNullOrBlank()) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "$name - StreamBeta ($sourceName)",
-                        url = streamUrl,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = "https://codedew.com/"
-                        this.headers = mapOf(
-                            "Referer" to "https://codedew.com/",
-                            "User-Agent" to USER_AGENT
-                        )
-                        this.quality = Qualities.P1080.value
-                    }
-                )
-                success = true
-            } else if (!directUrl.isNullOrBlank() && directUrl.contains("pixeldra.in")) {
-                val fileId = directUrl.substringAfter("/u/").substringBefore("?").substringBefore("/")
+            val payloadStream = decodeWorkerPayload(rawStream)
+            val payloadDirect = decodeWorkerPayload(rawDirect)
+
+            val resolvedTarget = payloadStream ?: payloadDirect ?: rawDirect ?: rawStream ?: continue
+
+            // 1. Check if Pixeldrain
+            if (resolvedTarget.contains("pixeldra.in", ignoreCase = true)) {
+                val fileId = resolvedTarget.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
                 if (fileId.isNotBlank()) {
-                    val apiDownload = "https://pixeldra.in/api/file/$fileId?download"
+                    val directDownload = "https://pixeldra.in/api/file/$fileId?download"
                     callback.invoke(
                         newExtractorLink(
                             source = this.name,
                             name = "$name - Pixeldrain ($sourceName)",
-                            url = apiDownload,
+                            url = directDownload,
                             type = ExtractorLinkType.VIDEO
                         ) {
                             this.referer = "https://pixeldra.in/"
@@ -331,7 +316,91 @@ class RareAnimesProvider : MainAPI() {
                     success = true
                 }
             }
+            // 2. Check if Google Drive / Google User Content stream
+            else if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Google Drive ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 3. Check if Cloudflare R2 / Cloud Stream
+            else if (resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Cloud Storage ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 4. Check if Mega link
+            else if (resolvedTarget.contains("mega.nz", ignoreCase = true)) {
+                if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
+                    success = true
+                }
+            }
+            // 5. Check if HLS m3u8 stream
+            else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - StreamBeta ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                try {
+                    M3u8Helper.generateM3u8(
+                        source = this.name,
+                        streamUrl = resolvedTarget,
+                        referer = "https://codedew.com/",
+                        quality = Qualities.P1080.value,
+                        name = "$name - StreamBeta ($sourceName)"
+                    ).forEach { link ->
+                        callback.invoke(link)
+                    }
+                } catch (t: Throwable) {
+                    // ignore
+                }
+                success = true
+            }
+            // 6. Direct MP4 / MKV Video
+            else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - StreamBeta ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 7. General Extractor fallback
+            else if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
+                success = true
+            }
         }
+
         return success
     }
 
@@ -397,7 +466,6 @@ class RareAnimesProvider : MainAPI() {
         )
         val html = response.text
         val embedUrl = Regex("""https?://argon\.razorshell\.space/embed/[A-Za-z0-9]+""").find(html)?.value ?: return false
-
         val embedRes = app.get(
             embedUrl,
             headers = mapOf(
@@ -411,8 +479,9 @@ class RareAnimesProvider : MainAPI() {
             .replace("\n", "").replace("\r", "").replace(" ", "")
 
         val decodedConfigStr = decodeJuicyCodes(encodedArg) ?: return false
-        val fileMatch = Regex(""""file"\s*:\s*"([^"]+)"""").find(decodedConfigStr) ?: return false
-        val m3u8Url = fileMatch.groupValues[1]
+
+        val m3u8Match = Regex("""https?://[^\s"'<>]+\.m3u8[^\s"'<>]*""").find(decodedConfigStr) ?: return false
+        val m3u8Url = m3u8Match.value
 
         callback.invoke(
             newExtractorLink(
@@ -429,6 +498,7 @@ class RareAnimesProvider : MainAPI() {
                 this.quality = Qualities.Unknown.value
             }
         )
+
         try {
             M3u8Helper.generateM3u8(
                 source = this.name,
@@ -444,9 +514,25 @@ class RareAnimesProvider : MainAPI() {
                 callback.invoke(link)
             }
         } catch (e: Throwable) {
-            // Sub-stream generation optional
+            // Master link is already provided
         }
+
         return true
+    }
+
+    private fun decodeWorkerPayload(rawUrl: String?): String? {
+        if (rawUrl == null) return null
+        return try {
+            val match = Regex("""workers\.dev/([A-Za-z0-9+/=_-]+)""").find(rawUrl) ?: return null
+            var b64 = match.groupValues[1].replace('-', '+').replace('_', '/')
+            val pad = b64.length % 4
+            if (pad != 0) b64 += "=".repeat(4 - pad)
+            val jsonStr = String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
+            val jsonPayload = parseJson<WorkerPayload>(jsonStr)
+            jsonPayload.url
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun decodeJuicyCodes(encoded: String): String? {
@@ -457,7 +543,6 @@ class RareAnimesProvider : MainAPI() {
             val pad = dataPart.length % 4
             val paddedData = if (pad != 0) dataPart + "=".repeat(4 - pad) else dataPart
             val raw = String(Base64.decode(paddedData, Base64.DEFAULT), Charsets.ISO_8859_1)
-
             val symbols = charArrayOf('`', '%', '-', '+', '*', '$', '!', '_', '^', '=')
             val symMap = symbols.mapIndexed { idx, c -> c to idx.toString() }.toMap()
             val digits = buildString {
@@ -465,7 +550,6 @@ class RareAnimesProvider : MainAPI() {
                     symMap[c]?.let { append(it) }
                 }
             }
-
             val salt = saltPart.map { (it.code - 100).toString() }.joinToString("").toIntOrNull() ?: 0
             val sb = StringBuilder()
             var i = 0
@@ -478,7 +562,7 @@ class RareAnimesProvider : MainAPI() {
                 }
                 i += 4
             }
-            sb.toString()
+            sb.toString().replace("\\/", "/")
         } catch (e: Exception) {
             null
         }
@@ -498,5 +582,10 @@ class RareAnimesProvider : MainAPI() {
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("url") val url: String? = null,
         @JsonProperty("stream_url") val streamUrl: String? = null
+    )
+
+    data class WorkerPayload(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("filename") val filename: String? = null
     )
 }
