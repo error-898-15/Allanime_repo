@@ -9,7 +9,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.Jsoup
 import java.net.URLEncoder
 
 class FlixVisionProvider : MainAPI() {
@@ -26,7 +25,6 @@ class FlixVisionProvider : MainAPI() {
     )
 
     companion object {
-        // Official TMDB API Key extracted from Flix Vision APK v3.8
         const val TMDB_API_KEY = "2f3cb5763db1117fcba3948632f8aad9"
         const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w500"
         const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/original"
@@ -72,7 +70,6 @@ class FlixVisionProvider : MainAPI() {
                 }
             }
         }
-
         return newHomePageResponse(request.name, items)
     }
 
@@ -107,7 +104,7 @@ class FlixVisionProvider : MainAPI() {
         val id = url.substringAfter("/movie/").substringAfter("/tv/").substringBefore("?").trim().toIntOrNull()
             ?: return null
         val type = if (isMovie) "movie" else "tv"
-        val detailUrl = "$mainUrl/$type/$id?api_key=$TMDB_API_KEY&append_to_response=credits,recommendations,external_ids"
+        val detailUrl = "$mainUrl/$type/$id?api_key=$TMDB_API_KEY&append_to_response=external_ids"
         val response = app.get(detailUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
 
         if (isMovie) {
@@ -117,7 +114,6 @@ class FlixVisionProvider : MainAPI() {
             val backdrop = movie.backdropPath?.let { "$TMDB_BACKDROP_BASE$it" }
             val year = movie.releaseDate?.split("-")?.firstOrNull()?.toIntOrNull()
             val tags = movie.genres?.mapNotNull { it.name }
-            val rating = movie.voteAverage?.let { (it * 10).toInt() }
             val imdbId = movie.externalIds?.imdbId
 
             val linkData = FlixVisionLinkData(
@@ -133,24 +129,7 @@ class FlixVisionProvider : MainAPI() {
                 this.backgroundPosterUrl = backdrop
                 this.year = year
                 this.plot = movie.overview
-                this.rating = rating
                 this.tags = tags
-                this.duration = movie.runtime
-                this.actors = movie.credits?.cast?.take(15)?.mapNotNull { cast ->
-                    cast.name?.let { actorName ->
-                        ActorData(
-                            Actor(actorName, cast.profilePath?.let { "$TMDB_IMAGE_BASE$it" }),
-                            roleString = cast.character
-                        )
-                    }
-                }
-                this.recommendations = movie.recommendations?.results?.mapNotNull { rec ->
-                    val recId = rec.id ?: return@mapNotNull null
-                    val recTitle = rec.title ?: rec.name ?: return@mapNotNull null
-                    newMovieSearchResponse(recTitle, "/movie/$recId", TvType.Movie) {
-                        this.posterUrl = rec.posterPath?.let { "$TMDB_IMAGE_BASE$it" }
-                    }
-                }
             }
         } else {
             val tv = parseJson<TmdbTvDetail>(response)
@@ -159,7 +138,6 @@ class FlixVisionProvider : MainAPI() {
             val backdrop = tv.backdropPath?.let { "$TMDB_BACKDROP_BASE$it" }
             val year = tv.firstAirDate?.split("-")?.firstOrNull()?.toIntOrNull()
             val tags = tv.genres?.mapNotNull { it.name }
-            val rating = tv.voteAverage?.let { (it * 10).toInt() }
             val imdbId = tv.externalIds?.imdbId
 
             val episodes = mutableListOf<Episode>()
@@ -189,8 +167,6 @@ class FlixVisionProvider : MainAPI() {
                                 this.season = sNum
                                 this.episode = epNum
                                 this.posterUrl = ep.stillPath?.let { "$TMDB_IMAGE_BASE$it" }
-                                this.description = ep.overview
-                                this.rating = ep.voteAverage?.let { (it * 10).toInt() }
                             }
                         )
                     }
@@ -204,23 +180,7 @@ class FlixVisionProvider : MainAPI() {
                 this.backgroundPosterUrl = backdrop
                 this.year = year
                 this.plot = tv.overview
-                this.rating = rating
                 this.tags = tags
-                this.actors = tv.credits?.cast?.take(15)?.mapNotNull { cast ->
-                    cast.name?.let { actorName ->
-                        ActorData(
-                            Actor(actorName, cast.profilePath?.let { "$TMDB_IMAGE_BASE$it" }),
-                            roleString = cast.character
-                        )
-                    }
-                }
-                this.recommendations = tv.recommendations?.results?.mapNotNull { rec ->
-                    val recId = rec.id ?: return@mapNotNull null
-                    val recTitle = rec.name ?: rec.title ?: return@mapNotNull null
-                    newTvSeriesSearchResponse(recTitle, "/tv/$recId", TvType.TvSeries) {
-                        this.posterUrl = rec.posterPath?.let { "$TMDB_IMAGE_BASE$it" }
-                    }
-                }
             }
         }
     }
@@ -400,7 +360,7 @@ class FlixVisionProvider : MainAPI() {
             extractEmbeddedStreams(noxxUrl, "1080p · [FVSTREAM 5] · [DIRECT] · English", subtitleCallback, callback)
         } catch (_: Exception) { }
 
-        // 10. [MOFLIX] - Direct Stream (English / German Multi-Audio)
+        // 10. [MOFLIX] - Direct Stream
         try {
             val moflixUrl = if (isMovie) {
                 "https://moflix-stream.xyz/api/v1/titles/tmdb|movie|$tmdbId?loader=titlePage"
@@ -411,7 +371,7 @@ class FlixVisionProvider : MainAPI() {
             extractStreamsFromJson(res, "1080p - [MOFLIX] - [DIRECT] - English/Multi", callback)
         } catch (_: Exception) { }
 
-        // 11. [FLIXVISION HINDI 1] - HindiLinks4U (Hindi & Bollywood Audio)
+        // 11. [FLIXVISION HINDI 1] - HindiLinks4U
         try {
             val hindiQuery = URLEncoder.encode(title, "UTF-8")
             val hindiLinksHosts = listOf("https://hindilinks4u.guru", "https://hindilinks4u.cam", "https://hindilinks4u.to")
@@ -434,7 +394,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (_: Exception) { }
 
-        // 12. [FLIXVISION HINDI 2] - HindiMoviesTV (Bollywood & Dual Audio)
+        // 12. [FLIXVISION HINDI 2] - HindiMoviesTV
         try {
             val hmtvUrl = "https://www.hindimoviestv.com/?s=${URLEncoder.encode(title, "UTF-8")}"
             val searchDoc = app.get(hmtvUrl, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to GOOGLE_REFERER)).document
@@ -450,7 +410,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (_: Exception) { }
 
-        // 13. [FLIXVISION REGIONAL] - MovieRulz (Tamil, Telugu, Malayalam, Kannada, Bengali)
+        // 13. [FLIXVISION REGIONAL] - MovieRulz
         try {
             val mrMirrors = listOf("https://ww9.watchmovierulz.ws", "https://www.movierulz.cr", "https://movierulz.com.ci")
             for (mrHost in mrMirrors) {
@@ -472,7 +432,7 @@ class FlixVisionProvider : MainAPI() {
             }
         } catch (_: Exception) { }
 
-        // 14. [FLIXVISION ASIAN] - KissAsian (Asian Dramas)
+        // 14. [FLIXVISION ASIAN] - KissAsian
         try {
             val kissHosts = listOf("https://kissasiantv.to", "https://kissasian.pe")
             for (kHost in kissHosts) {
@@ -610,13 +570,9 @@ data class TmdbMovieDetail(
     @JsonProperty("poster_path") val posterPath: String? = null,
     @JsonProperty("backdrop_path") val backdropPath: String? = null,
     @JsonProperty("overview") val overview: String? = null,
-    @JsonProperty("runtime") val runtime: Int? = null,
     @JsonProperty("release_date") val releaseDate: String? = null,
-    @JsonProperty("vote_average") val voteAverage: Double? = null,
     @JsonProperty("genres") val genres: List<TmdbGenre>? = null,
-    @JsonProperty("external_ids") val externalIds: TmdbExternalIds? = null,
-    @JsonProperty("credits") val credits: TmdbCredits? = null,
-    @JsonProperty("recommendations") val recommendations: TmdbPageResult? = null
+    @JsonProperty("external_ids") val externalIds: TmdbExternalIds? = null
 )
 
 data class TmdbTvDetail(
@@ -627,12 +583,9 @@ data class TmdbTvDetail(
     @JsonProperty("backdrop_path") val backdropPath: String? = null,
     @JsonProperty("overview") val overview: String? = null,
     @JsonProperty("first_air_date") val firstAirDate: String? = null,
-    @JsonProperty("vote_average") val voteAverage: Double? = null,
     @JsonProperty("genres") val genres: List<TmdbGenre>? = null,
     @JsonProperty("seasons") val seasons: List<TmdbSeason>? = null,
-    @JsonProperty("external_ids") val externalIds: TmdbExternalIds? = null,
-    @JsonProperty("credits") val credits: TmdbCredits? = null,
-    @JsonProperty("recommendations") val recommendations: TmdbPageResult? = null
+    @JsonProperty("external_ids") val externalIds: TmdbExternalIds? = null
 )
 
 data class TmdbSeasonDetail(
@@ -650,8 +603,7 @@ data class TmdbEpisode(
     @JsonProperty("episode_number") val episodeNumber: Int? = null,
     @JsonProperty("name") val name: String? = null,
     @JsonProperty("overview") val overview: String? = null,
-    @JsonProperty("still_path") val stillPath: String? = null,
-    @JsonProperty("vote_average") val voteAverage: Double? = null
+    @JsonProperty("still_path") val stillPath: String? = null
 )
 
 data class TmdbGenre(
@@ -661,14 +613,4 @@ data class TmdbGenre(
 
 data class TmdbExternalIds(
     @JsonProperty("imdb_id") val imdbId: String? = null
-)
-
-data class TmdbCredits(
-    @JsonProperty("cast") val cast: List<TmdbCast>? = null
-)
-
-data class TmdbCast(
-    @JsonProperty("name") val name: String? = null,
-    @JsonProperty("character") val character: String? = null,
-    @JsonProperty("profile_path") val profilePath: String? = null
 )
