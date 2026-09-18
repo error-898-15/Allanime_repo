@@ -138,15 +138,17 @@ class FlixVisionProvider : MainAPI() {
             val imdbId = tv.externalIds?.imdbId
 
             val episodes = mutableListOf<Episode>()
-            tv.seasons?.filter { (it.seasonNumber ?: 0) > 0 }?.forEach { season ->
-                val sNum = season.seasonNumber ?: return@forEach
+            val validSeasons = tv.seasons?.filter { (it.seasonNumber ?: 0) > 0 } ?: emptyList()
+            for (season in validSeasons) {
+                val sNum = season.seasonNumber ?: continue
                 try {
                     val seasonUrl = "$mainUrl/tv/$id/season/$sNum?api_key=$TMDB_API_KEY"
                     val seasonRes = app.get(seasonUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
                     val seasonData = parseJson<TmdbSeasonDetail>(seasonRes)
 
-                    seasonData.episodes?.forEach { ep ->
-                        val epNum = ep.episodeNumber ?: return@forEach
+                    val seasonEps = seasonData.episodes ?: emptyList()
+                    for (ep in seasonEps) {
+                        val epNum = ep.episodeNumber ?: continue
                         val epTitle = ep.name ?: "Episode $epNum"
                         val epLinkData = FlixVisionLinkData(
                             id = id,
@@ -306,10 +308,12 @@ class FlixVisionProvider : MainAPI() {
                     val targetLink = searchDoc.select("a[href*='/play/'], a[href*='/movie/'], .ml-item a").firstOrNull()?.attr("href")
                     if (!targetLink.isNullOrBlank()) {
                         val playDoc = app.get(targetLink, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to domain)).document
-                        playDoc.select("iframe[src]").forEach { iframe ->
+                        for (iframe in playDoc.select("iframe[src]")) {
                             val src = iframe.attr("src")
                             val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                            loadExtractor(cleanSrc, domain, subtitleCallback, callback)
+                            try {
+                                loadExtractor(cleanSrc, domain, subtitleCallback, callback)
+                            } catch (e: Exception) { }
                         }
                         extractEmbeddedStreams(targetLink, "1080p - [FVSTREAM 1] · [DIRECT] · Hindi/English", subtitleCallback, callback)
                         break
@@ -379,10 +383,12 @@ class FlixVisionProvider : MainAPI() {
                     val movieHref = searchDoc.select(".ml-item a, article a, h2 a").firstOrNull()?.attr("href")
                     if (!movieHref.isNullOrBlank()) {
                         val movieDoc = app.get(movieHref, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to hHost)).document
-                        movieDoc.select("iframe[src], .movieplay iframe").forEach { iframe ->
+                        for (iframe in movieDoc.select("iframe[src], .movieplay iframe")) {
                             val src = iframe.attr("src")
                             val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                            loadExtractor(cleanSrc, hHost, subtitleCallback, callback)
+                            try {
+                                loadExtractor(cleanSrc, hHost, subtitleCallback, callback)
+                            } catch (e: Exception) { }
                         }
                         extractEmbeddedStreams(movieHref, "1080p - [FLIXVISION HINDI 1] HindiLinks4U", subtitleCallback, callback)
                         break
@@ -398,10 +404,12 @@ class FlixVisionProvider : MainAPI() {
             val itemHref = searchDoc.select(".ml-item a, article a").firstOrNull()?.attr("href")
             if (!itemHref.isNullOrBlank()) {
                 val detailDoc = app.get(itemHref, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to "https://www.hindimoviestv.com/")).document
-                detailDoc.select("iframe[src]").forEach { iframe ->
+                for (iframe in detailDoc.select("iframe[src]")) {
                     val src = iframe.attr("src")
                     val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                    loadExtractor(cleanSrc, "https://www.hindimoviestv.com/", subtitleCallback, callback)
+                    try {
+                        loadExtractor(cleanSrc, "https://www.hindimoviestv.com/", subtitleCallback, callback)
+                    } catch (e: Exception) { }
                 }
                 extractEmbeddedStreams(itemHref, "1080p - [FLIXVISION HINDI 2] HindiMoviesTV", subtitleCallback, callback)
             }
@@ -417,10 +425,12 @@ class FlixVisionProvider : MainAPI() {
                     val movieLink = doc.select(".cont_display a, article a, .boxed a").firstOrNull()?.attr("href")
                     if (!movieLink.isNullOrBlank()) {
                         val pageDoc = app.get(movieLink, headers = mapOf("User-Agent" to USER_AGENT, "Referer" to mrHost)).document
-                        pageDoc.select("iframe[src]").forEach { iframe ->
+                        for (iframe in pageDoc.select("iframe[src]")) {
                             val src = iframe.attr("src")
                             val cleanSrc = if (src.startsWith("//")) "https:$src" else src
-                            loadExtractor(cleanSrc, mrHost, subtitleCallback, callback)
+                            try {
+                                loadExtractor(cleanSrc, mrHost, subtitleCallback, callback)
+                            } catch (e: Exception) { }
                         }
                         extractEmbeddedStreams(movieLink, "1080p - [FLIXVISION MULTI] MovieRulz (Regional)", subtitleCallback, callback)
                         break
@@ -460,7 +470,7 @@ class FlixVisionProvider : MainAPI() {
             val text = res.text
             val doc = res.document
 
-            doc.select("iframe[src]").forEach { iframe ->
+            for (iframe in doc.select("iframe[src]")) {
                 val src = iframe.attr("src").trim()
                 val clean = if (src.startsWith("//")) "https:$src" else src
                 if (clean.startsWith("http")) {
