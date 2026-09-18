@@ -108,5 +108,29 @@
     "fileSize": 0,
     "iconUrl": "https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "RareAnimes",
+    "internalName": "RareAnimesPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "RareAnimes - Watch Hindi, Tamil, Telugu Dubbed Anime, Cartoons & Movies with StreamBeta, Mega & MultiQuality CDN",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "Cartoon",
+      "Movie",
+      "TvSeries"
+    ],
+    "language": "hi",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/RareAnimesPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
