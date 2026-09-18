@@ -141,7 +141,8 @@ class RareAnimesProvider : MainAPI() {
                 val link = a.attr("href").trim()
                 val label = a.text().trim().ifEmpty { "Stream" }
                 if (link.isNotBlank()) ServerLink(label, link) else null
-            }
+            }.sortedBy { serverPriority(it.name) }
+
             val movieData = RareAnimesEpisodeData(url, movieServers).toJson()
             return newMovieLoadResponse(title, url, TvType.AnimeMovie, movieData) {
                 this.posterUrl = poster
@@ -158,6 +159,19 @@ class RareAnimesProvider : MainAPI() {
             this.plot = plot
             this.tags = tags
             this.year = year
+        }
+    }
+
+    private fun serverPriority(name: String): Int {
+        val s = name.lowercase()
+        return when {
+            s.contains("streambeta") -> 0
+            s.contains("pixeldrain") || s.contains("pixel") -> 1
+            s.contains("gdrive") || s.contains("google") -> 2
+            s.contains("mega") -> 3
+            s.contains("dlbeta") -> 4
+            s.contains("multiquality") || s.contains("multquality") -> 99
+            else -> 10
         }
     }
 
@@ -199,7 +213,9 @@ class RareAnimesProvider : MainAPI() {
                 } else {
                     "Episode $epNum"
                 }
-                val epData = RareAnimesEpisodeData(postUrl, servers).toJson()
+                // StreamBeta (Google Drive & Pixeldrain) সবার প্রথমে সাজানো হবে
+                val sortedServers = servers.sortedBy { serverPriority(it.name) }
+                val epData = RareAnimesEpisodeData(postUrl, sortedServers).toJson()
 
                 episodes.add(
                     newEpisode(epData) {
@@ -226,7 +242,9 @@ class RareAnimesProvider : MainAPI() {
             null
         }
 
-        val servers = epData?.servers ?: listOf(ServerLink("Direct", data))
+        val rawServers = epData?.servers ?: listOf(ServerLink("Direct", data))
+        // StreamBeta, Google Drive, Pixeldrain & Mega সবার আগে এবং MultiQuality সবার শেষে লোড হবে
+        val servers = rawServers.sortedBy { serverPriority(it.name) }
         val postUrl = epData?.postUrl ?: "$mainUrl/"
         var loadedAny = false
 
@@ -235,9 +253,6 @@ class RareAnimesProvider : MainAPI() {
                 val sName = server.name
                 val sUrl = server.url
                 when {
-                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) -> {
-                        if (extractMultiQuality(sUrl, postUrl, callback)) loadedAny = true
-                    }
                     sName.contains("StreamBeta", ignoreCase = true) -> {
                         if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) loadedAny = true
                     }
@@ -247,12 +262,15 @@ class RareAnimesProvider : MainAPI() {
                     sName.contains("DLBeta", ignoreCase = true) -> {
                         if (extractDLBeta(sUrl, postUrl, callback)) loadedAny = true
                     }
+                    sName.contains("MultiQuality", ignoreCase = true) || sName.contains("MultQuality", ignoreCase = true) -> {
+                        if (extractMultiQuality(sUrl, postUrl, callback)) loadedAny = true
+                    }
                     else -> {
-                        if (extractMultiQuality(sUrl, postUrl, callback)) {
-                            loadedAny = true
-                        } else if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) {
+                        if (extractStreamBeta(sUrl, postUrl, subtitleCallback, callback)) {
                             loadedAny = true
                         } else if (loadExtractor(sUrl, postUrl, subtitleCallback, callback)) {
+                            loadedAny = true
+                        } else if (extractMultiQuality(sUrl, postUrl, callback)) {
                             loadedAny = true
                         }
                     }
@@ -297,8 +315,27 @@ class RareAnimesProvider : MainAPI() {
 
             val resolvedTarget = payloadStream ?: payloadDirect ?: rawDirect ?: rawStream ?: continue
 
-            // 1. Check if Pixeldrain
-            if (resolvedTarget.contains("pixeldra.in", ignoreCase = true)) {
+            // 1. Google Drive / Google UserContent stream (High Priority FHD 1080p)
+            if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - Google Drive ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT,
+                            "Referer" to "https://codedew.com/"
+                        )
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 2. Pixeldrain Direct High-Speed API
+            else if (resolvedTarget.contains("pixeldra.in", ignoreCase = true)) {
                 val fileId = resolvedTarget.substringAfter("/u/").substringAfter("/file/").substringBefore("?").substringBefore("/")
                 if (fileId.isNotBlank()) {
                     val directDownload = "https://pixeldra.in/api/file/$fileId?download"
@@ -310,28 +347,17 @@ class RareAnimesProvider : MainAPI() {
                             type = ExtractorLinkType.VIDEO
                         ) {
                             this.referer = "https://pixeldra.in/"
+                            this.headers = mapOf(
+                                "User-Agent" to USER_AGENT,
+                                "Referer" to "https://pixeldra.in/"
+                            )
                             this.quality = Qualities.P1080.value
                         }
                     )
                     success = true
                 }
             }
-            // 2. Check if Google Drive / Google User Content stream
-            else if (resolvedTarget.contains("googleusercontent.com", ignoreCase = true)) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "$name - Google Drive ($sourceName)",
-                        url = resolvedTarget,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = "https://codedew.com/"
-                        this.quality = Qualities.P1080.value
-                    }
-                )
-                success = true
-            }
-            // 3. Check if Cloudflare R2 / Cloud Stream
+            // 3. Cloudflare R2 / Cloud Stream
             else if (resolvedTarget.contains("cloudflarestorage.com", ignoreCase = true)) {
                 callback.invoke(
                     newExtractorLink(
@@ -341,18 +367,41 @@ class RareAnimesProvider : MainAPI() {
                         type = ExtractorLinkType.VIDEO
                     ) {
                         this.referer = "https://codedew.com/"
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT,
+                            "Referer" to "https://codedew.com/"
+                        )
                         this.quality = Qualities.P1080.value
                     }
                 )
                 success = true
             }
-            // 4. Check if Mega link
+            // 4. Mega link
             else if (resolvedTarget.contains("mega.nz", ignoreCase = true)) {
                 if (loadExtractor(resolvedTarget, postUrl, subtitleCallback, callback)) {
                     success = true
                 }
             }
-            // 5. Check if HLS m3u8 stream
+            // 5. Direct MP4 / MKV Video
+            else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "$name - StreamBeta Direct ($sourceName)",
+                        url = resolvedTarget,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://codedew.com/"
+                        this.headers = mapOf(
+                            "User-Agent" to USER_AGENT,
+                            "Referer" to "https://codedew.com/"
+                        )
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                success = true
+            }
+            // 6. HLS m3u8 stream
             else if (resolvedTarget.contains(".m3u8", ignoreCase = true)) {
                 callback.invoke(
                     newExtractorLink(
@@ -378,21 +427,6 @@ class RareAnimesProvider : MainAPI() {
                 } catch (t: Throwable) {
                     // ignore
                 }
-                success = true
-            }
-            // 6. Direct MP4 / MKV Video
-            else if (resolvedTarget.contains(".mp4", ignoreCase = true) || resolvedTarget.contains(".mkv", ignoreCase = true)) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "$name - StreamBeta ($sourceName)",
-                        url = resolvedTarget,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = "https://codedew.com/"
-                        this.quality = Qualities.P1080.value
-                    }
-                )
                 success = true
             }
             // 7. General Extractor fallback
@@ -486,7 +520,7 @@ class RareAnimesProvider : MainAPI() {
         callback.invoke(
             newExtractorLink(
                 source = this.name,
-                name = "$name - MultiQuality (HLS Master)",
+                name = "$name - MultiQuality [Backup HLS]",
                 url = m3u8Url,
                 type = ExtractorLinkType.M3U8
             ) {
@@ -495,27 +529,9 @@ class RareAnimesProvider : MainAPI() {
                     "Referer" to "https://argon.razorshell.space/",
                     "User-Agent" to USER_AGENT
                 )
-                this.quality = Qualities.Unknown.value
+                this.quality = Qualities.P720.value
             }
         )
-
-        try {
-            M3u8Helper.generateM3u8(
-                source = this.name,
-                streamUrl = m3u8Url,
-                referer = "https://argon.razorshell.space/",
-                quality = Qualities.Unknown.value,
-                headers = mapOf(
-                    "Referer" to "https://argon.razorshell.space/",
-                    "User-Agent" to USER_AGENT
-                ),
-                name = "$name - MultiQuality"
-            ).forEach { link ->
-                callback.invoke(link)
-            }
-        } catch (e: Throwable) {
-            // Master link is already provided
-        }
 
         return true
     }
