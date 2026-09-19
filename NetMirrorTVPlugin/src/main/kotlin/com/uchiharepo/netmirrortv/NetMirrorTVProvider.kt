@@ -6,11 +6,12 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import java.net.URLDecoder
 import java.net.URLEncoder
 
 class NetMirrorTVProvider : MainAPI() {
     override var name = "NetMirror TV"
-    override var mainUrl = "https://net77.cc"
+    override var mainUrl = "https://net52.cc"
     override var lang = "en"
     override val hasMainPage = true
     override val hasQuickSearch = true
@@ -20,6 +21,8 @@ class NetMirrorTVProvider : MainAPI() {
         TvType.Anime,
         TvType.AsianDrama
     )
+
+    private val mirrorDomains = listOf("https://net52.cc", "https://net77.cc", "https://net11.cc")
 
     private val commonHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -50,11 +53,15 @@ class NetMirrorTVProvider : MainAPI() {
         val data = tryParseJson<NetMirrorSearchData>(res.text) ?: return null
         val items = data.searchResult.orEmpty().mapNotNull { r ->
             val id = r.id ?: return@mapNotNull null
-            val title = r.title ?: "Unknown"
+            val rawTitle = r.title ?: "Unknown"
+            val cleanTitle = cleanDisplayTitle(rawTitle)
             val poster = r.image?.toHttps()?.takeIf { it.isNotBlank() }
                 ?: "https://imgcdn.kim/poster/v/$id.jpg"
 
-            newMovieSearchResponse(title, "$title|$id", TvType.Movie) {
+            val encodedTitle = URLEncoder.encode(cleanTitle, "UTF-8")
+            val targetUrl = "$mainUrl/watch?id=$id&title=$encodedTitle"
+
+            newMovieSearchResponse(cleanTitle, targetUrl, TvType.Movie) {
                 this.posterUrl = poster
             }
         }
@@ -76,25 +83,46 @@ class NetMirrorTVProvider : MainAPI() {
         val data = tryParseJson<NetMirrorSearchData>(res.text) ?: return emptyList()
         return data.searchResult.orEmpty().mapNotNull { r ->
             val id = r.id ?: return@mapNotNull null
-            val title = r.title ?: "Unknown"
+            val rawTitle = r.title ?: "Unknown"
+            val cleanTitle = cleanDisplayTitle(rawTitle)
             val poster = r.image?.toHttps()?.takeIf { it.isNotBlank() }
                 ?: "https://imgcdn.kim/poster/v/$id.jpg"
 
-            newMovieSearchResponse(title, "$title|$id", TvType.Movie) {
+            val encodedTitle = URLEncoder.encode(cleanTitle, "UTF-8")
+            val targetUrl = "$mainUrl/watch?id=$id&title=$encodedTitle"
+
+            newMovieSearchResponse(cleanTitle, targetUrl, TvType.Movie) {
                 this.posterUrl = poster
             }
         }
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val parts = url.split("|")
-        val title = if (parts.size > 1) parts[0] else "NetMirror Title"
-        val postId = if (parts.size > 1) parts[1] else url.trim('/')
+        val postId = when {
+            url.contains("id=") -> url.substringAfter("id=").substringBefore("&").trim()
+            url.contains("|") -> url.substringAfterLast("|").trim()
+            else -> url.substringAfterLast("/").trim()
+        }
+
+        val parsedTitle = when {
+            url.contains("title=") -> {
+                try {
+                    URLDecoder.decode(url.substringAfter("title=").substringBefore("&"), "UTF-8")
+                } catch (_: Throwable) {
+                    "NetMirror Title"
+                }
+            }
+            url.contains("|") -> url.substringBefore("|").trim()
+            else -> "NetMirror Title"
+        }
+
+        val title = cleanDisplayTitle(parsedTitle)
         val posterUrl = "https://imgcdn.kim/poster/v/$postId.jpg"
 
+        // Check for episode list if available
         val epUrl = "$mainUrl/episodes.php?s=$postId"
         val epRes = try {
-            app.get(epUrl, headers = commonHeaders, timeout = 15)
+            app.get(epUrl, headers = commonHeaders, timeout = 12)
         } catch (_: Throwable) {
             null
         }
@@ -129,55 +157,83 @@ class NetMirrorTVProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val episodeId = data.trim('/')
-        val url = "$mainUrl/playlist.php?id=$episodeId"
-        val res = try {
-            app.get(url, headers = commonHeaders, timeout = 15)
-        } catch (_: Throwable) {
-            return false
+        val episodeId = when {
+            data.contains("id=") -> data.substringAfter("id=").substringBefore("&").trim()
+            data.contains("|") -> data.substringAfterLast("|").trim()
+            else -> data.trim().trim('/')
         }
 
-        val playlists = tryParseJson<List<NetMirrorPlayList>>(res.text) ?: return false
         var foundAny = false
 
-        playlists.forEach { playlist ->
-            playlist.sources?.forEach { source ->
-                val rawFile = source.file ?: return@forEach
-                val fileUrl = if (rawFile.startsWith("http")) rawFile else "$mainUrl$rawFile"
-                val label = source.label ?: "HD"
-
-                val quality = when {
-                    label.contains("1080") || label.contains("Full", ignoreCase = true) -> Qualities.P1080.value
-                    label.contains("720") || label.contains("Mid", ignoreCase = true) -> Qualities.P720.value
-                    label.contains("480") || label.contains("Low", ignoreCase = true) -> Qualities.P480.value
-                    else -> Qualities.Unknown.value
-                }
-
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = "$name [$label]",
-                        url = fileUrl,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.quality = quality
-                        this.referer = "$mainUrl/"
-                        this.headers = commonHeaders
-                    }
+        for (domain in mirrorDomains) {
+            val url = "$domain/playlist.php?id=$episodeId"
+            val res = try {
+                app.get(
+                    url,
+                    headers = mapOf(
+                        "User-Agent" to commonHeaders["User-Agent"]!!,
+                        "Accept" to "*/*",
+                        "Referer" to "$domain/"
+                    ),
+                    timeout = 10
                 )
-                foundAny = true
+            } catch (_: Throwable) {
+                continue
             }
 
-            playlist.tracks?.forEach { track ->
-                val fileUrl = track.file?.toHttps() ?: return@forEach
-                val kind = track.kind ?: "subtitles"
-                if (kind.contains("sub", true) || kind.contains("cap", true)) {
-                    subtitleCallback(SubtitleFile(track.label ?: "English", fileUrl))
+            val playlists = tryParseJson<List<NetMirrorPlayList>>(res.text) ?: continue
+
+            playlists.forEach { playlist ->
+                playlist.sources?.forEach { source ->
+                    val rawFile = source.file ?: return@forEach
+                    val fileUrl = if (rawFile.startsWith("http")) rawFile else "$domain$rawFile"
+                    val label = source.label ?: "HD"
+
+                    val quality = when {
+                        label.contains("1080") || label.contains("Full", ignoreCase = true) -> Qualities.P1080.value
+                        label.contains("720") || label.contains("Mid", ignoreCase = true) -> Qualities.P720.value
+                        label.contains("480") || label.contains("Low", ignoreCase = true) -> Qualities.P480.value
+                        else -> Qualities.Unknown.value
+                    }
+
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = "$name [$label]",
+                            url = fileUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.quality = quality
+                            this.referer = "$domain/"
+                            this.headers = mapOf(
+                                "User-Agent" to commonHeaders["User-Agent"]!!,
+                                "Referer" to "$domain/"
+                            )
+                        }
+                    )
+                    foundAny = true
+                }
+
+                playlist.tracks?.forEach { track ->
+                    val fileUrl = track.file?.toHttps() ?: return@forEach
+                    val kind = track.kind ?: "subtitles"
+                    if (kind.contains("sub", true) || kind.contains("cap", true)) {
+                        subtitleCallback(SubtitleFile(track.label ?: "English", fileUrl))
+                    }
                 }
             }
+
+            if (foundAny) break
         }
 
         return foundAny
+    }
+
+    private fun cleanDisplayTitle(raw: String): String {
+        return raw.trim()
+            .replace(Regex("^https?://[^/]+/?"), "")
+            .replace(Regex("^/+"), "")
+            .trim()
     }
 
     private fun String.toHttps(): String = when {
