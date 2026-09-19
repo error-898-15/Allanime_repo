@@ -6,7 +6,6 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
@@ -195,13 +194,14 @@ class AniflixProvider : MainAPI() {
             )
 
             val jsonPayload = toJson(payload)
-            val epItem = newEpisode(jsonPayload) {
-                this.name = epTitle
-                this.episode = epNumber
-                this.posterUrl = thumb
-                this.description = ep.synopsis
-            }
-            episodesList.add(epItem)
+            episodesList.add(
+                newEpisode(jsonPayload) {
+                    this.name = epTitle
+                    this.episode = epNumber
+                    this.posterUrl = thumb
+                    this.description = ep.synopsis
+                }
+            )
         }
 
         val poster = animeInfo.cover_image?.takeIf { it.isNotBlank() }
@@ -236,7 +236,7 @@ class AniflixProvider : MainAPI() {
         val malId = payload.malId.ifBlank { payload.id }
         val epNo = payload.ep
 
-        // 1. MegaVid (Saitama HLS)
+        // 1. ORIGINAL PRIMARY SERVER: MegaVid (Saitama HLS for Sub & Dub)
         listOf("sub", "dub").forEach { variant ->
             try {
                 val srcUrl = "https://megavid.buzz/mal/$malId/$epNo/$variant/source"
@@ -258,7 +258,7 @@ class AniflixProvider : MainAPI() {
                             url = hlsUrl,
                             referer = "https://megavid.buzz/",
                             quality = Qualities.P1080.value,
-                            type = ExtractorLinkType.M3U8,
+                            isM3u8 = true,
                             headers = mapOf(
                                 "User-Agent" to USER_AGENT,
                                 "Referer" to "https://megavid.buzz/"
@@ -301,7 +301,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 2. Anixo (Madara HLS)
+        // 2. ORIGINAL PRIMARY SERVER: Anixo (Madara HLS Master Stream)
         listOf("sub", "dub").forEach { variant ->
             try {
                 val anixoUrl = "https://anixo.buzz/embed/ani/${payload.id}/$epNo/$variant?color=%23ff0000"
@@ -323,7 +323,7 @@ class AniflixProvider : MainAPI() {
                             url = m3u8Url,
                             referer = "https://anixo.buzz/",
                             quality = Qualities.P1080.value,
-                            type = ExtractorLinkType.M3U8,
+                            isM3u8 = true,
                             headers = mapOf(
                                 "User-Agent" to USER_AGENT,
                                 "Referer" to "https://anixo.buzz/"
@@ -336,7 +336,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 3. Anivexa / Sukuna Sources
+        // 3. ANIFLIX OFFICIAL SOURCES: Anivexa / Anikoto / AniNeko / Sukuna / ReAnime
         payload.anivexa.take(4).forEach { anivexaPath ->
             try {
                 val apiUrl = if (anivexaPath.startsWith("http")) anivexaPath else "$mainUrl$anivexaPath"
@@ -361,7 +361,7 @@ class AniflixProvider : MainAPI() {
                                 url = fullUrl,
                                 referer = src.referer ?: "$mainUrl/",
                                 quality = Qualities.P1080.value,
-                                type = ExtractorLinkType.M3U8,
+                                isM3u8 = true,
                                 headers = mapOf(
                                     "User-Agent" to USER_AGENT,
                                     "Referer" to (src.referer ?: "$mainUrl/")
@@ -385,7 +385,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 4. Filemoon Extractor
+        // 4. ORIGINAL SERVER: Filemoon (Igris 1080p)
         if (!payload.fileCode.isNullOrBlank()) {
             try {
                 val filemoonUrl = "https://filemoon.sx/e/${payload.fileCode}"
@@ -396,7 +396,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 5. DesiDub Hindi Dub
+        // 5. ORIGINAL SERVER: DesiDub (Greed - Hindi Dub & Multi-Audio)
         if (!payload.desiDid.isNullOrBlank()) {
             try {
                 val desiApi = "$mainUrl/api/anime/episode-embeds?provider=desidub&did=${payload.desiDid}"
