@@ -23,6 +23,7 @@ class FlixVisionProvider : MainAPI() {
     )
 
     companion object {
+        // Authentic TMDB API Key extracted from FlixVision v3.8.0 APK
         const val TMDB_API_KEY = "2f3cb5763db1117fcba3948632f8aad9"
         const val TMDB_IMG_W500 = "https://image.tmdb.org/t/p/w500"
         const val TMDB_IMG_ORIGINAL = "https://image.tmdb.org/t/p/original"
@@ -72,7 +73,6 @@ class FlixVisionProvider : MainAPI() {
         val url = "${request.data}&page=$page"
         val response = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).text
         val parsed = parseJson<TmdbPageResponse>(response)
-
         val homeItems = parsed.results?.mapNotNull { item ->
             item.toSearchResponse()
         } ?: emptyList()
@@ -124,8 +124,8 @@ class FlixVisionProvider : MainAPI() {
 
         val tmdbId = linkData.id
         val isTv = linkData.type == "tv"
-
         val detailsUrl = "$mainUrl/${linkData.type}/$tmdbId?api_key=$TMDB_API_KEY&append_to_response=credits,external_ids"
+
         val response = app.get(detailsUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
         val details = parseJson<TmdbDetailsResponse>(response)
 
@@ -136,7 +136,7 @@ class FlixVisionProvider : MainAPI() {
         val tags = details.genres?.mapNotNull { it.name } ?: emptyList()
         val year = (details.releaseDate ?: details.firstAirDate)?.take(4)?.toIntOrNull()
 
-        // Extract and map cast members (Fix for Bug 1: Cast not showing)
+        // Extract and map cast members (Fix for Cast displaying properly)
         val actors = details.credits?.cast?.mapNotNull { castItem ->
             val actorName = castItem.name ?: return@mapNotNull null
             val actorRole = castItem.character ?: ""
@@ -153,7 +153,6 @@ class FlixVisionProvider : MainAPI() {
                 type = "movie",
                 title = title
             ).toJson()
-
             return newMovieLoadResponse(title, url, TvType.Movie, movieData) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = backdrop
@@ -171,7 +170,6 @@ class FlixVisionProvider : MainAPI() {
                     val seasonUrl = "$mainUrl/tv/$tmdbId/season/$s?api_key=$TMDB_API_KEY"
                     val sRes = app.get(seasonUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
                     val seasonData = parseJson<TmdbSeasonResponse>(sRes)
-
                     seasonData.episodes?.forEach { ep ->
                         val epNum = ep.episodeNumber ?: return@forEach
                         val epData = MediaPlayData(
@@ -181,7 +179,6 @@ class FlixVisionProvider : MainAPI() {
                             episode = epNum,
                             title = title
                         ).toJson()
-
                         episodes.add(
                             newEpisode(epData) {
                                 this.name = ep.name ?: "Episode $epNum"
@@ -192,7 +189,7 @@ class FlixVisionProvider : MainAPI() {
                         )
                     }
                 } catch (e: Exception) {
-                    // Skip season on error
+                    // Continue to next season if error
                 }
             }
 
@@ -226,113 +223,123 @@ class FlixVisionProvider : MainAPI() {
         var loadedAny = false
 
         // =========================================================================
-        // SERVER 1: [2EMBED] · [DIRECT] (High reliability multi-source embed)
+        // SERVER CLUSTER 1: [VIDSRC.BUZZ] HLS Multi-Stream Engine
+        // Extracts active direct 1080p HLS .m3u8 streams with server names & audio
+        // Fix for "No link found" problem
         // =========================================================================
         try {
-            val twoEmbedUrl = if (isTv) {
-                "https://www.2embed.cc/embedtv/$tmdbId&s=$season&e=$episode"
+            val buzzEmbedUrl = if (isTv) {
+                "https://vidsrc.buzz/embed/tv/$tmdbId/$season/$episode"
             } else {
-                "https://www.2embed.cc/embed/$tmdbId"
+                "https://vidsrc.buzz/embed/movie/$tmdbId"
             }
-            if (loadExtractor(twoEmbedUrl, "https://www.2embed.cc/", subtitleCallback, callback)) {
-                loadedAny = true
+
+            val html = app.get(
+                buzzEmbedUrl,
+                headers = mapOf("User-Agent" to USER_AGENT),
+                referer = "https://www.2embed.cc/"
+            ).text
+
+            val qMatch = Regex("""var Q\s*=\s*(\{.*?\});\s*var""", RegexOption.DOT_MATCHES_ALL).find(html)
+            if (qMatch != null) {
+                val qData = parseJson<BuzzConfigResponse>(qMatch.groupValues[1])
+                val servers = qData.ssr?.servers ?: emptyList()
+                servers.forEach { server ->
+                    val ref = server.ref ?: return@forEach
+                    val serverName = server.name ?: "Server"
+                    try {
+                        val playUrl = "https://vidsrc.buzz/pl/api.php?a=play&ref=" + URLEncoder.encode(ref, "UTF-8")
+                        val playRes = app.get(
+                            playUrl,
+                            headers = mapOf("User-Agent" to USER_AGENT),
+                            referer = "https://vidsrc.buzz/pl/"
+                        ).text
+
+                        val playData = parseJson<BuzzPlayResponse>(playRes)
+                        val streamPath = playData.url
+                        if (!streamPath.isNullOrBlank()) {
+                            val fullStreamUrl = if (streamPath.startsWith("http")) streamPath else "https://vidsrc.buzz$streamPath"
+                            callback.invoke(
+                                newExtractorLink(
+                                    source = this.name,
+                                    name = "$serverName · 1080p",
+                                    url = fullStreamUrl,
+                                    type = if (playData.type == "hls" || fullStreamUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                ) {
+                                    this.referer = "https://vidsrc.buzz/pl/"
+                                    this.headers = mapOf(
+                                        "Referer" to "https://vidsrc.buzz/pl/",
+                                        "User-Agent" to USER_AGENT
+                                    )
+                                    this.quality = Qualities.P1080.value
+                                }
+                            )
+                            loadedAny = true
+                        }
+                    } catch (e: Exception) {
+                        // Continue to other servers
+                    }
+                }
             }
         } catch (e: Exception) {
-            // 2Embed error suppressed
+            // VidSrc.buzz cluster error suppressed
         }
 
         // =========================================================================
-        // SERVER 2: [VIDSRC.ME] · [MULTI] (High-speed multi-source embed)
+        // SERVER CLUSTER 2: [FVSTREAM 4] · Cloudnestra / VidSrc.me API
         // =========================================================================
         try {
-            val vidsrcMeUrl = if (isTv) {
-                "https://vidsrc.me/embed/tv?tmdb=$tmdbId&season=$season&episode=$episode"
+            val vsMeApi = if (isTv) {
+                "https://vidsrc.me/vs_src.php?type=tv&id=$tmdbId&s=$season&e=$episode"
             } else {
-                "https://vidsrc.me/embed/movie?tmdb=$tmdbId"
+                "https://vidsrc.me/vs_src.php?type=movie&id=$tmdbId"
             }
-            if (loadExtractor(vidsrcMeUrl, "https://vidsrc.me/", subtitleCallback, callback)) {
-                loadedAny = true
+            val vsRes = app.get(
+                vsMeApi,
+                headers = mapOf(
+                    "Referer" to "https://vidsrc.me/",
+                    "User-Agent" to USER_AGENT,
+                    "X-Requested-With" to "XMLHttpRequest"
+                )
+            ).text
+
+            if (vsRes.contains("\"src\"")) {
+                val vsData = parseJson<VsSourceResponse>(vsRes)
+                val directSrc = vsData.src
+                if (!directSrc.isNullOrBlank()) {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = "FVSTREAM 4 · [DIRECT] · 1080p",
+                            url = directSrc,
+                            type = if (directSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = "https://vidsrc.me/"
+                            this.headers = mapOf(
+                                "Referer" to "https://vidsrc.me/",
+                                "User-Agent" to USER_AGENT
+                            )
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    loadedAny = true
+                }
             }
         } catch (e: Exception) {
-            // VidSrc.me error suppressed
+            // vs_src error suppressed
         }
 
         // =========================================================================
-        // SERVER 3: [FVSTREAM 1] · [VIDSRC.TO] · [DIRECT]
+        // SERVER CLUSTER 3: [VSEMBED.RU] API Fallback
         // =========================================================================
         try {
-            val vidsrcUrl = if (isTv) {
-                "https://vidsrc.to/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://vidsrc.to/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(vidsrcUrl, "https://vidsrc.to/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // VidSrc error suppressed
-        }
-
-        // =========================================================================
-        // SERVER 4: [SMASHYSTREAM] · [DIRECT]
-        // =========================================================================
-        try {
-            val smashyUrl = if (isTv) {
-                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId&season=$season&episode=$episode"
-            } else {
-                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId"
-            }
-            if (loadExtractor(smashyUrl, "https://embed.smashystream.com/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // SmashyStream error suppressed
-        }
-
-        // =========================================================================
-        // SERVER 5: [AUTOEMBED] · [DIRECT]
-        // =========================================================================
-        try {
-            val autoembedUrl = if (isTv) {
-                "https://player.autoembed.co/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://player.autoembed.co/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(autoembedUrl, "https://autoembed.co/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Autoembed error suppressed
-        }
-
-        // =========================================================================
-        // SERVER 6: [VIDSRC-EMBED] · [DIRECT]
-        // =========================================================================
-        try {
-            val vsEmbedUrl = if (isTv) {
-                "https://vidsrc-embed.ru/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://vidsrc-embed.ru/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(vsEmbedUrl, "https://vidsrc-embed.ru/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // vsEmbed error suppressed
-        }
-
-        // =========================================================================
-        // SERVER 7: [FVSTREAM 4] · [DIRECT] (Cloudnestra / VSEmbed Realtime API)
-        // =========================================================================
-        try {
-            val vsembedApi = if (isTv) {
+            val vsEmbedApi = if (isTv) {
                 "https://vsembed.ru/vs_src.php?type=tv&id=$tmdbId&s=$season&e=$episode"
             } else {
                 "https://vsembed.ru/vs_src.php?type=movie&id=$tmdbId"
             }
-
             val vsRes = app.get(
-                vsembedApi,
+                vsEmbedApi,
                 headers = mapOf(
                     "Referer" to "https://vsembed.ru/",
                     "User-Agent" to USER_AGENT,
@@ -344,50 +351,57 @@ class FlixVisionProvider : MainAPI() {
                 val vsData = parseJson<VsSourceResponse>(vsRes)
                 val directSrc = vsData.src
                 if (!directSrc.isNullOrBlank()) {
-                    if (directSrc.contains(".m3u8")) {
-                        callback.invoke(
-                            newExtractorLink(
-                                source = this.name,
-                                name = "1080p - [FVSTREAM 4] · [DIRECT]",
-                                url = directSrc,
-                                type = ExtractorLinkType.M3U8
-                            ) {
-                                this.referer = "https://vsembed.ru/"
-                                this.headers = mapOf(
-                                    "Referer" to "https://vsembed.ru/",
-                                    "User-Agent" to USER_AGENT
-                                )
-                                this.quality = Qualities.P1080.value
-                            }
-                        )
-                        loadedAny = true
-                    } else {
-                        if (loadExtractor(directSrc, "https://vsembed.ru/", subtitleCallback, callback)) {
-                            loadedAny = true
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = "FVSTREAM · Cloudnestra · 1080p",
+                            url = directSrc,
+                            type = if (directSrc.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = "https://vsembed.ru/"
+                            this.headers = mapOf(
+                                "Referer" to "https://vsembed.ru/",
+                                "User-Agent" to USER_AGENT
+                            )
+                            this.quality = Qualities.P1080.value
                         }
-                    }
+                    )
+                    loadedAny = true
                 }
             }
         } catch (e: Exception) {
-            // Cloudnestra error suppressed
+            // vsEmbed API error suppressed
         }
 
         // =========================================================================
-        // SERVER 8: 1080p · [FVSTREAM 3] · [DIRECT] · English (CloseLoad)
+        // SERVER CLUSTER 4: 2Embed & AutoEmbed Fallback
         // =========================================================================
         try {
-            val closeUrl = "https://closeload.top/embed/$tmdbId"
-            if (loadExtractor(closeUrl, "https://closeload.top/", subtitleCallback, callback)) {
-                loadedAny = true
+            val twoEmbedUrl = if (isTv) {
+                "https://www.2embed.cc/embedtv/$tmdbId&s=$season&e=$episode"
+            } else {
+                "https://www.2embed.cc/embed/$tmdbId"
             }
-        } catch (e: Exception) {
-            // CloseLoad error suppressed
-        }
+            val embedHtml = app.get(twoEmbedUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
+            val iframes = Regex("""<iframe[^>]+src=["']([^"']+)["']""").findAll(embedHtml).map { it.groupValues[1] }.toList()
+            for (ifUrl in iframes) {
+                val cleanUrl = if (ifUrl.startsWith("//")) "https:$ifUrl" else ifUrl
+                if (!cleanUrl.contains("vidsrc.buzz") && !cleanUrl.contains("vsembed")) {
+                    try {
+                        if (loadExtractor(cleanUrl, twoEmbedUrl, subtitleCallback, callback)) {
+                            loadedAny = true
+                        }
+                    } catch (e: Exception) {}
+                }
+            }
+        } catch (e: Exception) {}
 
         return loadedAny
     }
 
-    // JSON models
+    // =============================================================================
+    // DTO / JSON Data Models for TMDB & FlixVision APIs
+    // =============================================================================
     data class MediaLinkData(
         @JsonProperty("id") val id: Int,
         @JsonProperty("type") val type: String,
@@ -468,5 +482,24 @@ class FlixVisionProvider : MainAPI() {
 
     data class VsSourceResponse(
         @JsonProperty("src") val src: String? = null
+    )
+
+    data class BuzzConfigResponse(
+        @JsonProperty("ssr") val ssr: BuzzSsr? = null
+    )
+
+    data class BuzzSsr(
+        @JsonProperty("servers") val servers: List<BuzzServer>? = null
+    )
+
+    data class BuzzServer(
+        @JsonProperty("ref") val ref: String? = null,
+        @JsonProperty("name") val name: String? = null,
+        @JsonProperty("k") val k: String? = null
+    )
+
+    data class BuzzPlayResponse(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("type") val type: String? = null
     )
 }
