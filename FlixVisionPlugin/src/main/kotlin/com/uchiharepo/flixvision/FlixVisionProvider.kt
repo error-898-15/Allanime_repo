@@ -23,7 +23,6 @@ class FlixVisionProvider : MainAPI() {
     )
 
     companion object {
-        // Authentic TMDB API Key extracted from FlixVision v3.8.0 APK
         const val TMDB_API_KEY = "2f3cb5763db1117fcba3948632f8aad9"
         const val TMDB_IMG_W500 = "https://image.tmdb.org/t/p/w500"
         const val TMDB_IMG_ORIGINAL = "https://image.tmdb.org/t/p/original"
@@ -60,23 +59,19 @@ class FlixVisionProvider : MainAPI() {
         val poster = this.posterPath?.let { "$TMDB_IMG_W500$it" }
         val isTv = this.name != null || this.firstAirDate != null
 
-        val loadData = toJson(
-            MediaLinkData(
-                id = tmdbId,
-                type = if (isTv) "tv" else "movie",
-                title = titleText
-            )
-        )
+        val loadData = MediaLinkData(
+            id = tmdbId,
+            type = if (isTv) "tv" else "movie",
+            title = titleText
+        ).toJson()
 
         return if (isTv) {
             newTvSeriesSearchResponse(titleText, loadData, TvType.TvSeries) {
                 this.posterUrl = poster
-                this.year = this@toSearchResponse.firstAirDate?.take(4)?.toIntOrNull()
             }
         } else {
             newMovieSearchResponse(titleText, loadData, TvType.Movie) {
                 this.posterUrl = poster
-                this.year = this@toSearchResponse.releaseDate?.take(4)?.toIntOrNull()
             }
         }
     }
@@ -115,20 +110,17 @@ class FlixVisionProvider : MainAPI() {
         val year = (details.releaseDate ?: details.firstAirDate)?.take(4)?.toIntOrNull()
 
         if (!isTv) {
-            val movieData = toJson(
-                MediaPlayData(
-                    id = tmdbId,
-                    type = "movie",
-                    title = title
-                )
-            )
+            val movieData = MediaPlayData(
+                id = tmdbId,
+                type = "movie",
+                title = title
+            ).toJson()
             return newMovieLoadResponse(title, url, TvType.Movie, movieData) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.tags = tags
                 this.year = year
-                this.duration = details.runtime
             }
         } else {
             val episodes = mutableListOf<Episode>()
@@ -141,24 +133,20 @@ class FlixVisionProvider : MainAPI() {
                     val seasonData = parseJson<TmdbSeasonResponse>(sRes)
                     seasonData.episodes?.forEach { ep ->
                         val epNum = ep.episodeNumber ?: return@forEach
-                        val epData = toJson(
-                            MediaPlayData(
-                                id = tmdbId,
-                                type = "tv",
-                                season = s,
-                                episode = epNum,
-                                title = title
-                            )
-                        )
+                        val epData = MediaPlayData(
+                            id = tmdbId,
+                            type = "tv",
+                            season = s,
+                            episode = epNum,
+                            title = title
+                        ).toJson()
                         episodes.add(
-                            Episode(
-                                data = epData,
-                                name = ep.name ?: "Episode $epNum",
-                                season = s,
-                                episode = epNum,
-                                posterUrl = ep.stillPath?.let { "$TMDB_IMG_W500$it" },
-                                rating = ep.voteAverage?.times(10)?.toInt()
-                            )
+                            newEpisode(epData) {
+                                this.name = ep.name ?: "Episode $epNum"
+                                this.season = s
+                                this.episode = epNum
+                                this.posterUrl = ep.stillPath?.let { "$TMDB_IMG_W500$it" }
+                            }
                         )
                     }
                 } catch (e: Exception) {
@@ -223,6 +211,10 @@ class FlixVisionProvider : MainAPI() {
                                 type = ExtractorLinkType.M3U8
                             ) {
                                 this.referer = "https://vsembed.ru/"
+                                this.headers = mapOf(
+                                    "Referer" to "https://vsembed.ru/",
+                                    "User-Agent" to USER_AGENT
+                                )
                                 this.quality = Qualities.P1080.value
                             }
                         )
