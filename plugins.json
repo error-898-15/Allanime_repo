@@ -116,18 +116,20 @@
     "internalName": "FlixVisionPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "FlixVision - Movies, TV Series, Live TV & Multi-Language Audio Streams (Hindi, English, Dual Audio)",
+    "description": "FlixVision - Movies, TV Series & Multi-Server Direct Streams (FVSTREAM, VidSrc, SmashyStream, AutoEmbed)",
     "authors": [
       "error-898-15"
     ],
     "tvTypes": [
       "Movie",
-      "TvSeries",
-      "Live"
+      "TvSeries"
     ],
     "language": "en",
     "status": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/FlixVisionPlugin.cs3",
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png"
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
