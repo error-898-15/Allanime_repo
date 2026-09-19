@@ -1,10 +1,15 @@
 package com.uchiharepo.netmirrortv
 
+import android.util.Base64
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.utils.AppUtils.parseJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import java.util.Base64
+import java.net.URLEncoder
 
 class NetMirrorTVProvider : MainAPI() {
     override var name = "NetMirror TV"
@@ -34,7 +39,7 @@ class NetMirrorTVProvider : MainAPI() {
         return try {
             val res = app.get("$mainUrl/checknewtv.php", headers = mapOf("User-Agent" to userAgentString)).text
             if (res.isNotBlank()) {
-                val decoded = String(Base64.getDecoder().decode(res.trim())).trim()
+                val decoded = String(Base64.decode(res.trim(), Base64.DEFAULT)).trim()
                 if (decoded.startsWith("http")) decoded else mainUrl
             } else mainUrl
         } catch (e: Exception) {
@@ -52,12 +57,13 @@ class NetMirrorTVProvider : MainAPI() {
         val ott = request.data
         val activeDomain = resolveLiveDomain()
         val url = "$activeDomain/newtv/main.php"
-        val response = app.get(url, headers = getHeaders(ott)).parsedSafe<NetMirrorCatalogResponse>()
+        val res = app.get(url, headers = getHeaders(ott)).text
+        val response = try { parseJson<NetMirrorCatalogResponse>(res) } catch (e: Exception) { null }
 
-        val homeSections = response?.data?.mapNotNull { section ->
-            val sectionName = section.title ?: "Featured"
-            val searchResponses = section.items?.mapNotNull { item ->
-                val id = item.id ?: return@mapNotNull null
+        val searchResponses = mutableListOf<SearchResponse>()
+        response?.data?.forEach { section ->
+            section.items?.forEach { item ->
+                val id = item.id ?: return@forEach
                 val title = item.title ?: "Untitled"
                 val poster = item.poster?.let { fixUrl(it, activeDomain) }
                 val type = if (item.type?.contains("series", ignoreCase = true) == true || item.type?.contains("tv", ignoreCase = true) == true) {
@@ -66,17 +72,15 @@ class NetMirrorTVProvider : MainAPI() {
                     TvType.Movie
                 }
 
-                newMovieSearchResponse(title, "$activeDomain/newtv/post.php?id=$id&ott=$ott", type) {
-                    this.posterUrl = poster
-                }
-            } ?: emptyList()
+                searchResponses.add(
+                    newMovieSearchResponse(title, "$activeDomain/newtv/post.php?id=$id&ott=$ott", type) {
+                        this.posterUrl = poster
+                    }
+                )
+            }
+        }
 
-            if (searchResponses.isNotEmpty()) {
-                HomePageList(sectionName, searchResponses)
-            } else null
-        } ?: emptyList()
-
-        return newHomePageResponse(homeSections, hasNext = false)
+        return newHomePageResponse(request.name, searchResponses)
     }
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
@@ -87,8 +91,10 @@ class NetMirrorTVProvider : MainAPI() {
         val results = ottList.map { ott ->
             async {
                 try {
-                    val searchUrl = "$activeDomain/newtv/search.php?s=${cleanQuery.encodeUri()}"
-                    val resp = app.get(searchUrl, headers = getHeaders(ott)).parsedSafe<NetMirrorSearchResponse>()
+                    val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
+                    val searchUrl = "$activeDomain/newtv/search.php?s=$encoded"
+                    val res = app.get(searchUrl, headers = getHeaders(ott)).text
+                    val resp = try { parseJson<NetMirrorSearchResponse>(res) } catch (e: Exception) { null }
                     resp?.data?.mapNotNull { item ->
                         val id = item.id ?: return@mapNotNull null
                         val title = item.title ?: return@mapNotNull null
@@ -117,7 +123,8 @@ class NetMirrorTVProvider : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val activeDomain = resolveLiveDomain()
         val ott = if (url.contains("ott=pv")) "pv" else if (url.contains("ott=hs")) "hs" else "nf"
-        val resp = app.get(url, headers = getHeaders(ott)).parsedSafe<NetMirrorPostResponse>()
+        val res = app.get(url, headers = getHeaders(ott)).text
+        val resp = try { parseJson<NetMirrorPostResponse>(res) } catch (e: Exception) { null }
         val data = resp?.data ?: return null
 
         val title = data.title ?: "NetMirror TV"
@@ -139,7 +146,8 @@ class NetMirrorTVProvider : MainAPI() {
                 while (hasNext && page <= 10) {
                     try {
                         val epUrl = "$activeDomain/newtv/episodes.php?id=$seasonId&page=$page"
-                        val epResp = app.get(epUrl, headers = getHeaders(ott)).parsedSafe<NetMirrorEpisodeResponse>()
+                        val epRes = app.get(epUrl, headers = getHeaders(ott)).text
+                        val epResp = try { parseJson<NetMirrorEpisodeResponse>(epRes) } catch (e: Exception) { null }
                         val eps = epResp?.data ?: break
 
                         eps.forEach { epItem ->
@@ -190,7 +198,8 @@ class NetMirrorTVProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val ott = if (data.contains("ott=pv")) "pv" else if (data.contains("ott=hs")) "hs" else "nf"
-        val playerResp = app.get(data, headers = getHeaders(ott)).parsedSafe<NetMirrorPlayerResponse>()
+        val res = app.get(data, headers = getHeaders(ott)).text
+        val playerResp = try { parseJson<NetMirrorPlayerResponse>(res) } catch (e: Exception) { null }
         val playerData = playerResp?.data ?: return false
 
         playerData.subtitles?.forEach { sub ->
@@ -258,9 +267,5 @@ class NetMirrorTVProvider : MainAPI() {
         if (url.startsWith("http://") || url.startsWith("https://")) return url
         if (url.startsWith("//")) return "https:$url"
         return "$domain/${url.trimStart('/')}"
-    }
-
-    private fun String.encodeUri(): String {
-        return java.net.URLEncoder.encode(this, "UTF-8")
     }
 }
