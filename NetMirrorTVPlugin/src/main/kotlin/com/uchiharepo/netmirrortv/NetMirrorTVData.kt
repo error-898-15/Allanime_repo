@@ -31,7 +31,7 @@ data class NewTvPostData(
     @JsonProperty("ua") val ua: String? = null,
     @JsonProperty("runtime") val runtime: String? = null,
     @JsonProperty("genre") val genre: String? = null,
-    @JsonProperty("episodes") val episodes: List<NewTvEpisode>? = null,
+    @JsonProperty("episodes") val episodes: List<NewTvEpisode?>? = null,
     @JsonProperty("nextPageShow") val nextPageShow: Int? = null,
     @JsonProperty("nextPageSeason") val nextPageSeason: String? = null
 )
@@ -41,7 +41,7 @@ data class NewTvEpisode(
     @JsonProperty("t") val title: String? = null,
     @JsonProperty("ep") val ep: String? = null,
     @JsonProperty("ep_desc") val epDesc: String? = null,
-    @JsonProperty("info") val info: List<String>? = null
+    @JsonProperty("info") val info: List<String?>? = null
 )
 
 data class NetMirrorPlayList(
