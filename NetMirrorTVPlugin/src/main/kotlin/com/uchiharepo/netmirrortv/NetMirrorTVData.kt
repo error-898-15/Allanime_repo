@@ -23,6 +23,12 @@ data class NewTvPlayerResponse(
     @JsonProperty("title") val title: String? = null
 )
 
+data class NewTvSeason(
+    @JsonProperty("s") val s: String? = null,
+    @JsonProperty("id") val id: String? = null,
+    @JsonProperty("selected") val selected: Boolean? = null
+)
+
 data class NewTvPostData(
     @JsonProperty("status") val status: String? = null,
     @JsonProperty("title") val title: String? = null,
@@ -31,6 +37,7 @@ data class NewTvPostData(
     @JsonProperty("ua") val ua: String? = null,
     @JsonProperty("runtime") val runtime: String? = null,
     @JsonProperty("genre") val genre: String? = null,
+    @JsonProperty("season") val season: List<NewTvSeason?>? = null,
     @JsonProperty("episodes") val episodes: List<NewTvEpisode?>? = null,
     @JsonProperty("nextPageShow") val nextPageShow: Int? = null,
     @JsonProperty("nextPageSeason") val nextPageSeason: String? = null
