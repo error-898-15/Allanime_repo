@@ -1,21 +1,15 @@
-plugins {
-    id("com.android.library")
-    id("kotlin-android")
-    id("com.lagradost.cloudstream3.gradle")
-}
+version = 1
 
 cloudstream {
-    setRepo(System.getenv("GITHUB_REPOSITORY") ?: "error-898-15/Uchiharepo")
-    authors = listOf("error-898-15")
-    version = 1
-    apiVersion = 1
     description = "NetMirror TV - Stream Netflix, Prime Video, and Hotstar Movies & TV Shows with Original Direct CDN"
+    authors = listOf("error-898-15")
+    status = 1
     tvTypes = listOf("Movie", "TvSeries", "Anime")
     language = "en"
+    iconUrl = "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png"
 }
 
 android {
-    namespace = "com.uchiharepo.netmirrortv"
     defaultConfig {
         minSdk = 21
     }
