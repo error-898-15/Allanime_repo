@@ -1,5 +1,6 @@
 package com.uchiharepo.aniflix
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
@@ -40,10 +41,10 @@ class AniflixProvider : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val targetUrl = request.data
+        val url = request.data
         val searchData = try {
             val res = app.get(
-                targetUrl,
+                url,
                 headers = mapOf(
                     "User-Agent" to USER_AGENT,
                     "Referer" to "$mainUrl/"
@@ -55,135 +56,112 @@ class AniflixProvider : MainAPI() {
         }
 
         val animeList = searchData?.media?.mapNotNull { item ->
-            val id = item.id ?: return@mapNotNull null
-            val title = item.title?.english
+            val id = item.id?.toString() ?: return@mapNotNull null
+            val title = item.title?.english?.takeIf { it.isNotBlank() }
+                ?: item.title?.userPreferred?.takeIf { it.isNotBlank() }
                 ?: item.title?.romaji
-                ?: item.title?.userPreferred
                 ?: return@mapNotNull null
-            val poster = item.coverImage?.large
-                ?: item.coverImage?.extraLarge
-                ?: item.coverImage?.medium
+            val poster = item.coverImage?.extraLarge
+                ?: item.coverImage?.large
                 ?: item.image
-            val aid = item.aid ?: ""
 
-            newTvSeriesSearchResponse(
-                title,
-                "$mainUrl/anime?id=$id&aid=$aid&title=${URLEncoder.encode(title, "UTF-8")}",
-                TvType.Anime
-            ) {
+            newAnimeSearchResponse(title, "$mainUrl/api/anime/episodes?anilistId=$id&animeTitle=${URLEncoder.encode(title, "UTF-8")}") {
                 this.posterUrl = poster
             }
         } ?: emptyList()
 
-        return newHomePageResponse(request.name, animeList)
+        return newHomePageResponse(
+            listOf(HomePageList(request.name, animeList)),
+            hasNext = false
+        )
     }
-
-    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val targetUrl = "$mainUrl/api/anime/search?q=${URLEncoder.encode(query.trim(), "UTF-8")}"
+        val searchUrl = "$mainUrl/api/anime/search?q=${URLEncoder.encode(query, "UTF-8")}"
+        val res = app.get(
+            searchUrl,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to "$mainUrl/"
+            )
+        ).text
+
         val searchData = try {
-            val res = app.get(
-                targetUrl,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/"
-                )
-            ).text
             parseJson<AniflixSearchResponse>(res)
         } catch (e: Exception) {
-            null
+            return emptyList()
         }
 
-        return searchData?.media?.mapNotNull { item ->
-            val id = item.id ?: return@mapNotNull null
-            val title = item.title?.english
+        return searchData.media?.mapNotNull { item ->
+            val id = item.id?.toString() ?: return@mapNotNull null
+            val title = item.title?.english?.takeIf { it.isNotBlank() }
+                ?: item.title?.userPreferred?.takeIf { it.isNotBlank() }
                 ?: item.title?.romaji
-                ?: item.title?.userPreferred
                 ?: return@mapNotNull null
-            val poster = item.coverImage?.large
-                ?: item.coverImage?.extraLarge
-                ?: item.coverImage?.medium
+            val poster = item.coverImage?.extraLarge
+                ?: item.coverImage?.large
                 ?: item.image
-            val aid = item.aid ?: ""
 
-            newTvSeriesSearchResponse(
-                title,
-                "$mainUrl/anime?id=$id&aid=$aid&title=${URLEncoder.encode(title, "UTF-8")}",
-                TvType.Anime
-            ) {
+            newAnimeSearchResponse(title, "$mainUrl/api/anime/episodes?anilistId=$id&animeTitle=${URLEncoder.encode(title, "UTF-8")}") {
                 this.posterUrl = poster
             }
         } ?: emptyList()
     }
 
-    override suspend fun load(url: String): LoadResponse? {
-        val anilistId: String
-        val aid: String
-        val title: String
+    override suspend fun load(url: String): LoadResponse {
+        val res = app.get(
+            url,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to "$mainUrl/"
+            )
+        ).text
 
-        if (url.contains("?")) {
-            val queryStr = url.substringAfter("?")
-            val params = queryStr.split("&").associate { param ->
-                val parts = param.split("=")
-                val k = URLDecoder.decode(parts[0], "UTF-8")
-                val v = if (parts.size > 1) URLDecoder.decode(parts[1], "UTF-8") else ""
-                k to v
-            }
-            anilistId = params["id"] ?: url.substringAfterLast("/")
-            aid = params["aid"] ?: ""
-            title = params["title"] ?: "Anime"
-        } else {
-            anilistId = url.substringAfterLast("/")
-            aid = ""
-            title = "Anime"
-        }
+        val data = parseJson<AniflixEpisodesResponse>(res)
+        val animeInfo = data.anime ?: throw ErrorLoadingException("Failed to parse anime details from Aniflix API")
 
-        val episodesApiUrl = StringBuilder("$mainUrl/api/anime/episodes?anilistId=$anilistId")
-        if (title.isNotBlank()) {
-            episodesApiUrl.append("&animeTitle=${URLEncoder.encode(title, "UTF-8")}")
-        }
-        if (aid.isNotBlank()) {
-            episodesApiUrl.append("&aid=$aid")
-        }
+        val title = animeInfo.anime_name
+            ?: url.substringAfter("animeTitle=").substringBefore("&").let { URLDecoder.decode(it, "UTF-8") }
+        val anilistId = animeInfo.anilist_id?.toString()
+            ?: url.substringAfter("anilistId=").substringBefore("&")
+        val aid = animeInfo.aid?.toString() ?: ""
 
-        val epData = try {
-            val epRes = app.get(
-                episodesApiUrl.toString(),
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/"
-                )
-            ).text
-            parseJson<AniflixEpisodesResponse>(epRes)
-        } catch (e: Exception) {
-            null
-        }
-
-        val animeInfo = epData?.anime
         val episodesList = mutableListOf<Episode>()
-
-        animeInfo?.episodes?.forEach { ep ->
+        animeInfo.episodes?.forEach { ep ->
             val epNumber = ep.ep_no ?: return@forEach
-            val epTitle = ep.ep_title ?: "Episode $epNumber"
+            val epName = ep.ep_title?.takeIf { it.isNotBlank() } ?: "Episode $epNumber"
             val thumb = ep.thumbnail_default?.takeIf { it.isNotBlank() }
                 ?: ep.thumbnail_tvdb?.takeIf { it.isNotBlank() }
 
-            val payload = EpisodePayload(
-                anilistId = anilistId,
+            val allServers = (ep.servers?.hindi ?: emptyList()) +
+                    (ep.servers?.sub ?: emptyList()) +
+                    (ep.servers?.eng ?: emptyList()) +
+                    (ep.servers?.jap ?: emptyList())
+
+            val fileCode = allServers.firstOrNull { !it.file_code.isNullOrBlank() }?.file_code
+                ?: allServers.firstOrNull { it.link?.contains("/e/") == true }?.link?.substringAfter("/e/")?.substringBefore("?")
+                ?: allServers.firstOrNull { it.raw_link?.contains("/e/") == true }?.raw_link?.substringAfter("/e/")?.substringBefore("?")
+
+            val desiDid = ep.servers?.hindi?.firstOrNull { it.stream_provider == "desidub" }?.did
+
+            val anivexaLinks = allServers.mapNotNull {
+                val raw = it.raw_link ?: it.link
+                if (raw != null && raw.contains("/api/anime/sources")) raw else null
+            }.distinct()
+
+            val payload = EpisodeData(
+                id = anilistId,
                 malId = animeInfo.mal_id?.toString() ?: anilistId,
-                aid = aid,
-                epNo = epNumber,
+                ep = epNumber,
                 title = animeInfo.anime_name ?: title,
-                hindiServers = ep.servers?.hindi ?: emptyList(),
-                subServers = ep.servers?.sub ?: ep.servers?.eng ?: emptyList(),
-                japServers = ep.servers?.jap ?: emptyList(),
-                desidubDid = ep.servers?.hindi?.firstOrNull { it.stream_provider == "desidub" }?.did
+                desiDid = desiDid,
+                fileCode = fileCode,
+                anivexa = anivexaLinks
             )
 
             episodesList.add(
-                newEpisode(payload.toJson()) {
-                    this.name = epTitle
+                newEpisode(toJson(payload)) {
+                    this.name = epName
                     this.episode = epNumber
                     this.posterUrl = thumb
                     this.description = ep.synopsis
@@ -191,11 +169,11 @@ class AniflixProvider : MainAPI() {
             )
         }
 
-        val poster = animeInfo?.episodes?.firstOrNull()?.thumbnail_default
-        return newTvSeriesLoadResponse(title, url, TvType.Anime, episodesList) {
-            this.posterUrl = poster
-            this.backgroundPosterUrl = poster
-            this.plot = animeInfo?.episodes?.firstOrNull()?.synopsis
+        return newAnimeLoadResponse(title, url, TvType.Anime) {
+            this.posterUrl = animeInfo.cover_image?.takeIf { it.isNotBlank() }
+            this.plot = animeInfo.description
+            this.tags = animeInfo.genres
+            this.episodes = episodesList.sortedBy { it.episode }
         }
     }
 
@@ -206,161 +184,221 @@ class AniflixProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val payload = try {
-            parseJson<EpisodePayload>(data)
+            parseJson<EpisodeData>(data)
         } catch (e: Exception) {
-            return false
+            val parts = data.split(";")
+            if (parts.size >= 2) {
+                EpisodeData(id = parts[0], malId = parts[0], ep = parts[1].toIntOrNull() ?: 1)
+            } else {
+                return false
+            }
         }
 
         var loadedAny = false
-        val anilistId = payload.anilistId
-        val epNo = payload.epNo
+        val malId = payload.malId.ifBlank { payload.id }
+        val epNo = payload.ep
 
-        // 1. ORIGINAL SERVER: Anixo (Server Alias: Madara) - Direct HLS Master Stream
-        try {
-            val anixoUrl = "https://anixo.buzz/embed/ani/$anilistId/$epNo/sub?color=%23ff0000"
-            val anixoRes = app.get(
-                anixoUrl,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/"
-                )
-            ).text
-            val streamUrlMatch = Regex(""""streamUrl"\s*:\s*"([^"]+)"""").find(anixoRes)
-            if (streamUrlMatch != null) {
-                val streamUrl = streamUrlMatch.groupValues[1].replace("\\u0026", "&")
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "Anixo (Madara - Master HLS)",
-                        url = streamUrl,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = "https://anixo.buzz/"
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to "https://anixo.buzz/"
-                        )
-                        this.quality = Qualities.P1080.value
+        // 1. ORIGINAL PRIMARY SERVER: MegaVid (Server Alias: Saitama) - Direct HLS for Sub and Dub
+        listOf("sub", "dub").forEach { variant ->
+            try {
+                val srcUrl = "https://megavid.buzz/mal/$malId/$epNo/$variant/source"
+                val res = app.get(
+                    srcUrl,
+                    headers = mapOf(
+                        "User-Agent" to USER_AGENT,
+                        "Referer" to "https://megavid.buzz/mal/$malId/$epNo/$variant?color=%23ff0000"
+                    )
+                ).text
+                val json = parseJson<MegaVidSourceResponse>(res)
+                val hlsUrl = json.source
+                if (!hlsUrl.isNullOrBlank() && hlsUrl.startsWith("http")) {
+                    val label = if (variant == "dub") "MegaVid (Saitama - Dub HLS)" else "MegaVid (Saitama - Sub HLS)"
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = label,
+                            url = hlsUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = "https://megavid.buzz/"
+                            this.headers = mapOf(
+                                "User-Agent" to USER_AGENT,
+                                "Referer" to "https://megavid.buzz/"
+                            )
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    loadedAny = true
+
+                    json.tracks?.forEach { track ->
+                        val trackFile = track.file
+                        if (!trackFile.isNullOrBlank()) {
+                            subtitleCallback.invoke(
+                                SubtitleFile(
+                                    track.label ?: "English (${variant.uppercase()})",
+                                    trackFile
+                                )
+                            )
+                        }
                     }
-                )
-                loadedAny = true
+
+                    try {
+                        M3u8Helper.generateM3u8(
+                            source = this.name,
+                            streamUrl = hlsUrl,
+                            referer = "https://megavid.buzz/",
+                            quality = Qualities.Unknown.value,
+                            headers = mapOf(
+                                "User-Agent" to USER_AGENT,
+                                "Referer" to "https://megavid.buzz/"
+                            ),
+                            name = label
+                        ).forEach { link ->
+                            callback.invoke(link)
+                            loadedAny = true
+                        }
+                    } catch (e: Exception) {
+                    }
+                }
+            } catch (e: Exception) {
             }
-        } catch (e: Exception) {
-            // Next server
         }
 
-        // 2. ORIGINAL SERVER: MegaVid (Server Alias: Saitama) - Direct HLS Stream
-        try {
-            val megavidApi = "$mainUrl/api/anime/episode-src?server=megavid&id=$anilistId&ep=$epNo"
-            val megaRes = app.get(
-                megavidApi,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/"
-                )
-            ).text
-            val megaData = parseJson<MegaVidResponse>(megaRes)
-            val hlsSource = megaData.source
-            if (!hlsSource.isNullOrBlank() && hlsSource.startsWith("http")) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "MegaVid (Saitama - Direct HLS)",
-                        url = hlsSource,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = "https://megavid.buzz/"
-                        this.headers = mapOf(
-                            "User-Agent" to USER_AGENT,
-                            "Referer" to "https://megavid.buzz/"
-                        )
-                        this.quality = Qualities.P1080.value
-                    }
-                )
-                loadedAny = true
+        // 2. ORIGINAL PRIMARY SERVER: Anixo (Server Alias: Madara) - Direct HLS Master Stream (Sub & Dub)
+        listOf("sub", "dub").forEach { variant ->
+            try {
+                val anixoUrl = "https://anixo.buzz/embed/ani/${payload.id}/$epNo/$variant?color=%23ff0000"
+                val anixoRes = app.get(
+                    anixoUrl,
+                    headers = mapOf(
+                        "User-Agent" to USER_AGENT,
+                        "Referer" to "$mainUrl/"
+                    )
+                ).text
 
-                try {
-                    M3u8Helper.generateM3u8(
-                        source = this.name,
-                        streamUrl = hlsSource,
-                        referer = "https://megavid.buzz/",
-                        quality = Qualities.P1080.value,
-                        name = "$name - MegaVid"
-                    ).forEach { link ->
-                        callback.invoke(link)
+                val m3u8Matches = Regex("""https://anixo\.buzz/api/stream/m3u8\?t=[^"'\s&]+""").findAll(anixoRes).map { it.value }.toSet()
+                m3u8Matches.forEachIndexed { idx, m3u8Url ->
+                    val label = "Anixo (Madara - ${variant.uppercase()}" + (if (idx > 0) " Backup $idx)" else ")")
+                    callback.invoke(
+                        newExtractorLink(
+                            source = this.name,
+                            name = label,
+                            url = m3u8Url,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.referer = "https://anixo.buzz/"
+                            this.headers = mapOf(
+                                "User-Agent" to USER_AGENT,
+                                "Referer" to "https://anixo.buzz/"
+                            )
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    loadedAny = true
+                }
+            } catch (e: Exception) {
+            }
+        }
+
+        // 3. ANIFLIX OFFICIAL SOURCES: Anivexa / Anikoto / AniNeko / Sukuna / ReAnime
+        payload.anivexa.take(4).forEach { anivexaPath ->
+            try {
+                val apiUrl = if (anivexaPath.startsWith("http")) anivexaPath else "$mainUrl$anivexaPath"
+                val anivexaRes = app.get(
+                    apiUrl,
+                    headers = mapOf(
+                        "User-Agent" to USER_AGENT,
+                        "Referer" to "$mainUrl/"
+                    )
+                ).text
+                val anivexaData = parseJson<AnivexaResponse>(anivexaRes)
+                val allSources = (anivexaData.sources?.jap ?: emptyList()) + (anivexaData.sources?.eng ?: emptyList())
+                allSources.forEach { src ->
+                    val streamUrl = src.proxiedUrl ?: src.proxyUrl ?: src.streamUrl ?: src.url ?: src.rawUrl
+                    if (!streamUrl.isNullOrBlank()) {
+                        val fullUrl = if (streamUrl.startsWith("/")) "$mainUrl$streamUrl" else streamUrl
+                        val serverName = src.server ?: src.provider ?: "Anivexa"
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = "Aniflix - $serverName (HLS)",
+                                url = fullUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.referer = src.referer ?: "$mainUrl/"
+                                this.headers = mapOf(
+                                    "User-Agent" to USER_AGENT,
+                                    "Referer" to (src.referer ?: "$mainUrl/")
+                                )
+                                this.quality = Qualities.P1080.value
+                            }
+                        )
                         loadedAny = true
                     }
-                } catch (e: Exception) {
-                    // ignore
                 }
+
+                anivexaData.subtitles?.forEach { sub ->
+                    val subUrl = sub.url ?: sub.src ?: sub.file
+                    if (!subUrl.isNullOrBlank()) {
+                        val fullSubUrl = if (subUrl.startsWith("/")) "$mainUrl$subUrl" else subUrl
+                        subtitleCallback.invoke(
+                            SubtitleFile(sub.label ?: "English", fullSubUrl)
+                        )
+                    }
+                }
+            } catch (e: Exception) {
             }
-        } catch (e: Exception) {
-            // Next server
         }
 
-        // 3. ORIGINAL SERVER: DesiDub (Server Alias: Greed - Hindi & Multi-Audio)
-        val desidubDid = payload.desidubDid
-            ?: payload.hindiServers.firstOrNull { it.stream_provider == "desidub" }?.did
-        if (!desidubDid.isNullOrBlank()) {
+        // 4. ORIGINAL SERVER: Filemoon (Server Alias: Igris) - Direct Full HD Extractor
+        if (!payload.fileCode.isNullOrBlank()) {
             try {
-                val desidubApi = "$mainUrl/api/anime/episode-embeds?provider=desidub&did=$desidubDid"
+                val filemoonUrl = "https://filemoon.sx/e/${payload.fileCode}"
+                if (loadExtractor(filemoonUrl, "$mainUrl/", subtitleCallback, callback)) {
+                    loadedAny = true
+                }
+            } catch (e: Exception) {
+            }
+        }
+
+        // 5. ORIGINAL SERVER: DesiDub (Server Alias: Greed - Hindi Dub & Multi-Audio Embeds)
+        if (!payload.desiDid.isNullOrBlank()) {
+            try {
+                val desiApi = "$mainUrl/api/anime/episode-embeds?provider=desidub&did=${payload.desiDid}"
                 val desiRes = app.get(
-                    desidubApi,
+                    desiApi,
                     headers = mapOf(
                         "User-Agent" to USER_AGENT,
                         "Referer" to "$mainUrl/"
                     )
                 ).text
                 val desiData = parseJson<DesiDubEmbedResponse>(desiRes)
-                desiData.allServers?.forEach { srv ->
-                    val srvUrl = srv.url ?: return@forEach
-                    try {
-                        if (loadExtractor(srvUrl, "$mainUrl/", subtitleCallback, callback)) {
-                            loadedAny = true
+                desiData.allServers?.forEach { server ->
+                    val embed = server.url
+                    if (!embed.isNullOrBlank() && embed.startsWith("http")) {
+                        try {
+                            if (loadExtractor(embed, "$mainUrl/", subtitleCallback, callback)) {
+                                loadedAny = true
+                            }
+                        } catch (e: Exception) {
                         }
-                    } catch (e: Exception) {
-                        // Continue to next server
                     }
                 }
             } catch (e: Exception) {
-                // Proceed to next original server
             }
-        }
-
-        // 4. ORIGINAL SERVER: Filemoon (Server Alias: Igris) & Direct Server Embeds
-        val allServersList = payload.hindiServers + payload.subServers + payload.japServers
-        for (server in allServersList) {
-            val serverLink = server.link ?: server.embed_url ?: server.raw_link
-            if (!serverLink.isNullOrBlank() && serverLink.startsWith("http")) {
-                try {
-                    if (loadExtractor(serverLink, "$mainUrl/", subtitleCallback, callback)) {
-                        loadedAny = true
-                    }
-                } catch (e: Exception) {
-                    // Skip unsupported link
-                }
-            }
-        }
-
-        // 5. ORIGINAL SERVER: VidNest (Server Alias: Rudeus)
-        try {
-            val vidnestUrl = "https://vidnest.fun/anime/$anilistId/$epNo/sub"
-            if (loadExtractor(vidnestUrl, "$mainUrl/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Proceed
         }
 
         return loadedAny
     }
 
     // JSON Data Transfer Models
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixSearchResponse(
         @JsonProperty("ok") val ok: Boolean? = null,
         @JsonProperty("media") val media: List<AniflixMediaItem>? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixMediaItem(
         @JsonProperty("id") val id: Any? = null,
         @JsonProperty("aid") val aid: Any? = null,
@@ -372,29 +410,38 @@ class AniflixProvider : MainAPI() {
         @JsonProperty("status") val status: String? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixTitleData(
         @JsonProperty("english") val english: String? = null,
         @JsonProperty("romaji") val romaji: String? = null,
         @JsonProperty("userPreferred") val userPreferred: String? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixCoverImageData(
         @JsonProperty("large") val large: String? = null,
         @JsonProperty("extraLarge") val extraLarge: String? = null,
         @JsonProperty("medium") val medium: String? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixEpisodesResponse(
         @JsonProperty("anime") val anime: AniflixAnimeDetails? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixAnimeDetails(
         @JsonProperty("anilist_id") val anilist_id: Any? = null,
         @JsonProperty("mal_id") val mal_id: Any? = null,
+        @JsonProperty("aid") val aid: Any? = null,
         @JsonProperty("anime_name") val anime_name: String? = null,
+        @JsonProperty("cover_image") val cover_image: String? = null,
+        @JsonProperty("description") val description: String? = null,
+        @JsonProperty("genres") val genres: List<String>? = null,
         @JsonProperty("episodes") val episodes: List<AniflixEpisodeData>? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixEpisodeData(
         @JsonProperty("ep_no") val ep_no: Int? = null,
         @JsonProperty("ep_title") val ep_title: String? = null,
@@ -404,6 +451,7 @@ class AniflixProvider : MainAPI() {
         @JsonProperty("servers") val servers: AniflixEpisodeServers? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixEpisodeServers(
         @JsonProperty("hindi") val hindi: List<AniflixServerEntry>? = null,
         @JsonProperty("sub") val sub: List<AniflixServerEntry>? = null,
@@ -411,6 +459,7 @@ class AniflixProvider : MainAPI() {
         @JsonProperty("jap") val jap: List<AniflixServerEntry>? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixServerEntry(
         @JsonProperty("server_name") val server_name: String? = null,
         @JsonProperty("server_alias") val server_alias: String? = null,
@@ -418,31 +467,75 @@ class AniflixProvider : MainAPI() {
         @JsonProperty("raw_link") val raw_link: String? = null,
         @JsonProperty("embed_url") val embed_url: String? = null,
         @JsonProperty("stream_provider") val stream_provider: String? = null,
-        @JsonProperty("did") val did: String? = null
+        @JsonProperty("did") val did: String? = null,
+        @JsonProperty("file_code") val file_code: String? = null
     )
 
-    data class EpisodePayload(
-        @JsonProperty("anilistId") val anilistId: String,
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class EpisodeData(
+        @JsonProperty("id") val id: String,
         @JsonProperty("malId") val malId: String,
-        @JsonProperty("aid") val aid: String,
-        @JsonProperty("epNo") val epNo: Int,
-        @JsonProperty("title") val title: String,
-        @JsonProperty("hindiServers") val hindiServers: List<AniflixServerEntry> = emptyList(),
-        @JsonProperty("subServers") val subServers: List<AniflixServerEntry> = emptyList(),
-        @JsonProperty("japServers") val japServers: List<AniflixServerEntry> = emptyList(),
-        @JsonProperty("desidubDid") val desidubDid: String? = null
+        @JsonProperty("ep") val ep: Int,
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("desiDid") val desiDid: String? = null,
+        @JsonProperty("fileCode") val fileCode: String? = null,
+        @JsonProperty("anivexa") val anivexa: List<String> = emptyList()
     )
 
-    data class MegaVidResponse(
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MegaVidSourceResponse(
         @JsonProperty("status") val status: String? = null,
-        @JsonProperty("source") val source: String? = null
+        @JsonProperty("source") val source: String? = null,
+        @JsonProperty("tracks") val tracks: List<MegaVidTrack>? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class MegaVidTrack(
+        @JsonProperty("file") val file: String? = null,
+        @JsonProperty("label") val label: String? = null,
+        @JsonProperty("kind") val kind: String? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnivexaResponse(
+        @JsonProperty("available") val available: Boolean? = null,
+        @JsonProperty("sources") val sources: AnivexaSourcesContainer? = null,
+        @JsonProperty("subtitles") val subtitles: List<AnivexaSubtitle>? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnivexaSourcesContainer(
+        @JsonProperty("jap") val jap: List<AnivexaStreamItem>? = null,
+        @JsonProperty("eng") val eng: List<AnivexaStreamItem>? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnivexaStreamItem(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("streamUrl") val streamUrl: String? = null,
+        @JsonProperty("rawUrl") val rawUrl: String? = null,
+        @JsonProperty("proxiedUrl") val proxiedUrl: String? = null,
+        @JsonProperty("proxyUrl") val proxyUrl: String? = null,
+        @JsonProperty("provider") val provider: String? = null,
+        @JsonProperty("server") val server: String? = null,
+        @JsonProperty("referer") val referer: String? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    data class AnivexaSubtitle(
+        @JsonProperty("url") val url: String? = null,
+        @JsonProperty("src") val src: String? = null,
+        @JsonProperty("file") val file: String? = null,
+        @JsonProperty("label") val label: String? = null
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class DesiDubEmbedResponse(
         @JsonProperty("available") val available: Boolean? = null,
         @JsonProperty("allServers") val allServers: List<DesiDubServer>? = null
     )
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     data class DesiDubServer(
         @JsonProperty("name") val name: String? = null,
         @JsonProperty("alias") val alias: String? = null,
