@@ -127,14 +127,26 @@ class CinevoodProvider : MainAPI() {
         }
     }
 
+    // Posters fix: filters out base64 placeholders and gets real poster from data-src / data-lazy-src
+    private fun Element.extractCleanPoster(): String? {
+        val img = this.selectFirst("div.featured-thumbnail img, div.entry-content img, div.post-single-content img, article img, img") ?: return null
+        val candidates = listOf(
+            img.attr("data-src"),
+            img.attr("data-lazy-src"),
+            img.attr("data-original"),
+            img.attr("srcset").substringBefore(" ").trim(),
+            img.attr("src")
+        )
+        return candidates.firstOrNull { it.isNotBlank() && !it.startsWith("data:image", ignoreCase = true) }
+    }
+
     private fun Element.toSearchResult(): SearchResponse? {
         val titleElement = this.selectFirst("header h2.title a, h2.title a, a.post-image") ?: return null
         val rawTitle = titleElement.attr("title").ifBlank { titleElement.text() }.trim()
         if (rawTitle.isBlank() || rawTitle.contains("Just a moment", ignoreCase = true)) return null
         val href = titleElement.attr("href").ifBlank { this.selectFirst("a")?.attr("href") } ?: return null
 
-        val img = this.selectFirst("div.featured-thumbnail img, img")
-        val poster = img?.attr("src")?.ifBlank { img.attr("data-src") }
+        val poster = this.extractCleanPoster()
 
         val isSeries = rawTitle.contains("Season", ignoreCase = true) ||
                 rawTitle.contains("S0", ignoreCase = true) ||
@@ -146,7 +158,6 @@ class CinevoodProvider : MainAPI() {
         val cleanTitle = rawTitle.replace(Regex("""(?i)\s*CineVood.*"""), "").trim()
         val year = Regex("""\((19\d\d|20\d\d)\)""").find(cleanTitle)?.groupValues?.get(1) ?: ""
 
-        // Preserve metadata in URL hash so load() NEVER displays "Just a moment..." or blank metadata
         val safeMeta = URLEncoder.encode("$cleanTitle|||$poster|||$year", "UTF-8")
         val finalUrl = "$href#cvmeta=$safeMeta"
 
@@ -181,7 +192,6 @@ class CinevoodProvider : MainAPI() {
 
         val doc = getDoc(rawUrl)
 
-        // Parse title with multiple cleanups
         var parsedTitle = doc.selectFirst("h1.title, header h1, h1, .post-title")?.text()?.trim() ?: ""
         if (parsedTitle.contains("Just a moment", ignoreCase = true)) parsedTitle = ""
 
@@ -193,7 +203,6 @@ class CinevoodProvider : MainAPI() {
         }
         parsedTitle = parsedTitle.replace(Regex("""(?i)\s*CineVood.*"""), "").trim()
 
-        // Derive title from URL slug if still blank or challenged
         val slugTitle = try {
             rawUrl.removeSuffix("/").substringAfterLast("/")
                 .split("-")
@@ -208,9 +217,7 @@ class CinevoodProvider : MainAPI() {
             else -> "CineVood Video"
         }
 
-        val poster = doc.selectFirst("div.featured-thumbnail img, div.entry-content img, div.post-single-content img, article img")?.let {
-            it.attr("src").ifBlank { it.attr("data-src") }
-        } ?: cachedPoster
+        val poster = doc.extractCleanPoster() ?: cachedPoster
 
         val plot = doc.selectFirst("div.entry-content p:matches((?i)storyline|synopsis|plot)")?.text()
             ?: doc.select("div.entry-content p, div.thecontent p").firstOrNull { it.text().length > 35 && !it.text().contains("download", ignoreCase = true) }?.text()
@@ -227,7 +234,6 @@ class CinevoodProvider : MainAPI() {
                 rawUrl.contains("web-series") ||
                 rawUrl.contains("tv-shows")
 
-        // Parse download / watch links
         val contentLinks = doc.select("div.entry-content a, div.post-single-content a, article a, div.thecontent a, a.btn, a.button")
         val directServers = mutableListOf<CineServer>()
         val episodeMap = mutableMapOf<Int, MutableList<CineServer>>()
@@ -265,7 +271,6 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // If specific server buttons were not parsed, grab any external link inside entry content
         if (directServers.isEmpty()) {
             for (link in contentLinks) {
                 val href = link.attr("href").trim()
@@ -275,7 +280,6 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // TV Series Handling
         if (isSeries && episodeMap.isNotEmpty()) {
             val episodes = episodeMap.map { (epNum, servers) ->
                 val epData = CineEpisodeData(
@@ -297,7 +301,6 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // Movie handling
         val passData = CineMovieData(
             title = finalTitle,
             servers = directServers.ifEmpty { listOf(CineServer("CineVood Direct Server", rawUrl)) }
@@ -311,6 +314,7 @@ class CinevoodProvider : MainAPI() {
         }
     }
 
+    // Links resolver fix: multi-server extraction with PixelDrain 1080p, FastDL, HLS & Drive redirection
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -334,23 +338,29 @@ class CinevoodProvider : MainAPI() {
         for (server in servers) {
             val serverUrl = server.url
             try {
-                if (serverUrl.contains("hubcloud")) {
+                if (serverUrl.contains("hubcloud") || serverUrl.contains("gadgetsweb") || serverUrl.contains("hblinks")) {
                     if (resolveHubCloud(serverUrl, subtitleCallback, callback)) loadedAny = true
                 } else if (serverUrl.contains("pixeldrain.com")) {
                     val id = serverUrl.substringAfterLast("/u/").substringAfterLast("/")
-                    val directUrl = "https://pixeldrain.com/api/file/$id"
-                    callback.invoke(
-                        newExtractorLink(
-                            source = this.name,
-                            name = "${server.name} [PixelDrain Direct CDN]",
-                            url = directUrl,
-                            type = ExtractorLinkType.VIDEO
-                        ) {
-                            this.referer = "https://pixeldrain.com/"
-                            this.quality = Qualities.P1080.value
-                        }
-                    )
-                    loadedAny = true
+                    if (id.isNotBlank()) {
+                        val directUrl = "https://pixeldrain.com/api/file/$id"
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = "${server.name} [PixelDrain Direct CDN]",
+                                url = directUrl,
+                                type = ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = "https://pixeldrain.com/"
+                                this.quality = Qualities.P1080.value
+                            }
+                        )
+                        loadedAny = true
+                    }
+                } else if (serverUrl.contains("fastdl") || serverUrl.contains("gofile") || serverUrl.contains("streamtape") || serverUrl.contains("filemoon") || serverUrl.contains("dood")) {
+                    if (loadExtractor(serverUrl, "$mainUrl/", subtitleCallback, callback)) {
+                        loadedAny = true
+                    }
                 } else if (serverUrl.endsWith(".m3u8")) {
                     callback.invoke(
                         newExtractorLink(
@@ -378,25 +388,39 @@ class CinevoodProvider : MainAPI() {
                     )
                     loadedAny = true
                 } else if (serverUrl.contains("cinevood")) {
-                    // Fallback: server is an article link -> inspect page for download buttons
                     val pageDoc = getDoc(serverUrl)
                     val links = pageDoc.select("div.entry-content a, div.thecontent a, a.btn, a.button")
                     for (l in links) {
                         val h = l.attr("href")
-                        if (h.contains("hubcloud")) {
+                        if (h.contains("hubcloud") || h.contains("gadgetsweb") || h.contains("hblinks")) {
                             if (resolveHubCloud(h, subtitleCallback, callback)) loadedAny = true
-                        } else if (h.contains("pixeldrain") || h.contains("fastdl") || h.contains("drive") || h.contains("stream")) {
+                        } else if (h.contains("pixeldrain")) {
+                            val id = h.substringAfterLast("/u/").substringAfterLast("/")
+                            if (id.isNotBlank()) {
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = this.name,
+                                        name = "${l.text().ifBlank { "PixelDrain CDN" }}",
+                                        url = "https://pixeldrain.com/api/file/$id",
+                                        type = ExtractorLinkType.VIDEO
+                                    ) {
+                                        this.referer = "https://pixeldrain.com/"
+                                        this.quality = Qualities.P1080.value
+                                    }
+                                )
+                                loadedAny = true
+                            }
+                        } else if (h.contains("fastdl") || h.contains("drive") || h.contains("stream") || h.contains("gofile") || h.contains("filemoon")) {
                             if (loadExtractor(h, "$mainUrl/", subtitleCallback, callback)) loadedAny = true
                         }
                     }
                 } else {
-                    // General CloudStream extractor
                     if (loadExtractor(serverUrl, "$mainUrl/", subtitleCallback, callback)) {
                         loadedAny = true
                     }
                 }
             } catch (e: Exception) {
-                // Continue to next server
+                // Continue
             }
         }
         return loadedAny
@@ -421,7 +445,69 @@ class CinevoodProvider : MainAPI() {
             return false
         }
 
-        // 1. Direct PixelDrain resolution
+        // Intermediate drive / redirect pages resolver
+        val intermediateLinks = hubDoc.select("a[href*='/drive/'], a[href*='/video/'], a[href*='hubcloud'], a.btn-success, a.btn-primary")
+        for (iLink in intermediateLinks) {
+            val href = iLink.attr("href")
+            if (href.isNotBlank() && href != hubUrl && (href.contains("/drive/") || href.contains("/video/"))) {
+                try {
+                    val subDoc = app.get(
+                        href,
+                        headers = mapOf(
+                            "User-Agent" to USER_AGENT,
+                            "Referer" to hubUrl
+                        ),
+                        interceptor = cfKiller
+                    ).document
+
+                    subDoc.select("a[href*='pixeldrain.com']").forEach { pLink ->
+                        val pUrl = pLink.attr("href")
+                        val id = pUrl.substringAfterLast("/u/").substringAfterLast("/")
+                        if (id.isNotBlank()) {
+                            callback.invoke(
+                                newExtractorLink(
+                                    source = this.name,
+                                    name = "HubCloud -> PixelDrain 1080p CDN",
+                                    url = "https://pixeldrain.com/api/file/$id",
+                                    type = ExtractorLinkType.VIDEO
+                                ) {
+                                    this.referer = "https://pixeldrain.com/"
+                                    this.quality = Qualities.P1080.value
+                                }
+                            )
+                            anyLoaded = true
+                        }
+                    }
+
+                    subDoc.select("a.btn, a[href*='download'], a[href*='r2.dev'], a[href*='workers.dev'], a[href*='fastdl'], a[href*='.mp4'], a[href*='.m3u8']").forEach { fLink ->
+                        val fHref = fLink.attr("href")
+                        val fText = fLink.text().trim()
+                        if (fHref.isNotBlank() && !fHref.startsWith("#") && !fHref.startsWith("javascript") && !fHref.contains("pixeldrain")) {
+                            if (fHref.endsWith(".m3u8") || fHref.endsWith(".mp4")) {
+                                callback.invoke(
+                                    newExtractorLink(
+                                        source = this.name,
+                                        name = "HubCloud Stream (${fText.ifBlank { "Fast Server" }})",
+                                        url = fHref,
+                                        type = if (fHref.endsWith(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                                    ) {
+                                        this.referer = href
+                                        this.quality = Qualities.P1080.value
+                                    }
+                                )
+                                anyLoaded = true
+                            } else {
+                                if (loadExtractor(fHref, href, subtitleCallback, callback)) anyLoaded = true
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Continue
+                }
+            }
+        }
+
+        // Direct PixelDrain resolution
         hubDoc.select("a[href*='pixeldrain.com']").forEach { pLink ->
             val href = pLink.attr("href")
             val id = href.substringAfterLast("/u/").substringAfterLast("/")
@@ -442,7 +528,7 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // 2. Video Player embed
+        // Video Player embed
         hubDoc.select("iframe[src]").forEach { iframe ->
             val src = iframe.attr("src")
             if (src.isNotBlank() && !src.contains("ads")) {
@@ -453,13 +539,13 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // 3. Fast Server / Direct Download Buttons
+        // Fast Server & Direct Streams
         val fastLinks = hubDoc.select("a.btn, a[href*='download'], a[href*='r2.dev'], a[href*='workers.dev'], a[href*='fastdl']")
         for (fLink in fastLinks) {
             val href = fLink.attr("href")
             val text = fLink.text().trim()
             if (href.isNotBlank() && !href.startsWith("#") && !href.startsWith("javascript")) {
-                if (href.contains("pixeldrain")) continue // already handled
+                if (href.contains("pixeldrain")) continue
                 if (loadExtractor(href, hubUrl, subtitleCallback, callback)) {
                     anyLoaded = true
                 } else if (href.endsWith(".m3u8") || href.endsWith(".mp4")) {
