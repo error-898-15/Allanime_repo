@@ -11,6 +11,7 @@ import okhttp3.Response
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.util.Base64
+import java.util.regex.Pattern
 
 class NetMirrorTVProvider : MainAPI() {
     override var name = "NetMirror TV"
@@ -192,13 +193,14 @@ class NetMirrorTVProvider : MainAPI() {
             val postData = res?.text?.let { tryParseJson<NewTvPostData>(it) }
             if (postData != null && postData.status == "ok") {
                 val realTitle = postData.title?.takeIf { it.isNotBlank() }?.let { cleanDisplayTitle(it) } ?: fallbackTitle
-                val episodes = postData.episodes.orEmpty().filter { !it.id.isNullOrBlank() }
+                val episodes = postData.episodes.orEmpty().filterNotNull().filter { !it.id.isNullOrBlank() }
 
                 if (episodes.isNotEmpty()) {
                     val csEpisodes = episodes.mapIndexedNotNull { idx, ep ->
                         val epId = ep.id ?: return@mapIndexedNotNull null
                         val epNum = ep.ep?.toIntOrNull() ?: (idx + 1)
-                        val seasonNum = ep.info?.firstOrNull { it.startsWith("S", ignoreCase = true) }
+                        val seasonNum = ep.info?.filterNotNull()
+                            ?.firstOrNull { it.startsWith("S", ignoreCase = true) }
                             ?.substring(1)?.toIntOrNull() ?: 1
 
                         newEpisode(epId) {
@@ -269,22 +271,85 @@ class NetMirrorTVProvider : MainAPI() {
 
             val refererHeader = playerData.referer ?: mainUrl
 
+            // 1a. Emit Master M3U8 stream
             callback(
                 newExtractorLink(
                     source = name,
-                    name = "$name [Full HD]",
+                    name = "$name [Auto/Master]",
                     url = videoLink,
                     type = ExtractorLinkType.M3U8
                 ) {
                     this.quality = Qualities.P1080.value
                     this.referer = refererHeader
                     this.headers = mapOf(
-                        "User-Agent" to newTvBaseHeaders["User-Agent"]!!,
-                        "Referer" to refererHeader
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Referer" to "$mainUrl/",
+                        "Origin" to mainUrl
                     )
                 }
             )
             foundAny = true
+
+            // 1b. Inspect Master M3U8 to extract specific qualities and subtitles
+            try {
+                val m3u8Res = app.get(
+                    videoLink,
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Referer" to "$mainUrl/"
+                    ),
+                    timeout = 5
+                )
+                val m3u8Content = m3u8Res.text
+
+                // Extract Subtitles
+                val subPattern = Pattern.compile("""#EXT-X-MEDIA:TYPE=SUBTITLES.*?NAME="([^"]+)".*?URI="([^"]+)"""", Pattern.CASE_INSENSITIVE)
+                val subMatcher = subPattern.matcher(m3u8Content)
+                while (subMatcher.find()) {
+                    val subName = subMatcher.group(1) ?: continue
+                    val subUri = subMatcher.group(2) ?: continue
+                    subtitleCallback(SubtitleFile(subName, subUri))
+                }
+
+                // Extract Resolution Streams (e.g., 1080p, 720p, 480p)
+                val streamPattern = Pattern.compile("""RESOLUTION=(\d+x\d+).*?\r?\n(https?://[^\r\n]+)""", Pattern.CASE_INSENSITIVE)
+                val streamMatcher = streamPattern.matcher(m3u8Content)
+                while (streamMatcher.find()) {
+                    val resText = streamMatcher.group(1) ?: ""
+                    val streamUrl = streamMatcher.group(2) ?: continue
+                    val qualityVal = when {
+                        resText.contains("1080") -> Qualities.P1080.value
+                        resText.contains("720") -> Qualities.P720.value
+                        resText.contains("480") -> Qualities.P480.value
+                        else -> Qualities.Unknown.value
+                    }
+                    val label = when {
+                        resText.contains("1080") -> "1080p Full HD"
+                        resText.contains("720") -> "720p HD"
+                        resText.contains("480") -> "480p SD"
+                        else -> resText
+                    }
+
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = "$name [$label]",
+                            url = streamUrl,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            this.quality = qualityVal
+                            this.referer = "$mainUrl/"
+                            this.headers = mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                                "Referer" to "$mainUrl/",
+                                "Origin" to mainUrl
+                            )
+                        }
+                    )
+                }
+            } catch (_: Throwable) {
+            }
+
             break
         }
 
@@ -299,6 +364,13 @@ class NetMirrorTVProvider : MainAPI() {
 
             val playlists = res?.text?.let { tryParseJson<List<NetMirrorPlayList>>(it) }
             playlists?.forEach { playlist ->
+                playlist.tracks?.forEach { track ->
+                    val subFile = track.file ?: return@forEach
+                    val subUrl = if (subFile.startsWith("http")) subFile else "$mainUrl$subFile"
+                    val subLabel = track.label ?: "Sub"
+                    subtitleCallback(SubtitleFile(subLabel, subUrl))
+                }
+
                 playlist.sources?.forEach { source ->
                     val rawFile = source.file ?: return@forEach
                     val fileUrl = if (rawFile.startsWith("http")) rawFile else "$mainUrl$rawFile"
@@ -324,11 +396,18 @@ class NetMirrorTVProvider : MainAPI() {
         return foundAny
     }
 
-    override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor? {
+    override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor {
         return object : Interceptor {
             override fun intercept(chain: Interceptor.Chain): Response {
-                val request = chain.request()
-                val newRequest = request.newBuilder()
+                val original = chain.request()
+                val newRequest = original.newBuilder()
+                    .removeHeader("User-Agent")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                    .removeHeader("Referer")
+                    .header("Referer", "$mainUrl/")
+                    .removeHeader("Origin")
+                    .header("Origin", mainUrl)
+                    .removeHeader("Cookie")
                     .header("Cookie", "hd=on")
                     .build()
                 return chain.proceed(newRequest)
@@ -373,4 +452,4 @@ class NetMirrorTVProvider : MainAPI() {
         startsWith("http:") -> "https${substring(4)}"
         else -> this
     }
-}
+                                                 }
