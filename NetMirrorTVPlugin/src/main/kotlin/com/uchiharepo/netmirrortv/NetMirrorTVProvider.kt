@@ -21,10 +21,11 @@ class NetMirrorTVProvider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries,
-        TvType.Anime
+        TvType.Anime,
+        TvType.AsianDrama
     )
 
-    private val userAgentString = "okhttp/4.9.2"
+    private val userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0"
     private val defaultReferer = "https://net52.cc"
 
     private fun getHeaders(ott: String = "nf"): Map<String, String> {
@@ -32,61 +33,132 @@ class NetMirrorTVProvider : MainAPI() {
             "User-Agent" to userAgentString,
             "Accept" to "*/*",
             "Ott" to ott,
+            "X-Requested-With" to "NetmirrorNewTV v1.0",
             "Referer" to "$mainUrl/"
         )
     }
 
+    private val fallbackDomains = listOf(
+        "https://tv.imgcdn.kim",
+        "https://mobiledetects.com",
+        "https://mobiledetect.app",
+        "https://mobidetect.cc",
+        "https://net52.cc",
+        "https://net11.cc"
+    )
+
     private suspend fun resolveLiveDomain(): String {
-        return try {
-            val res = app.get("$mainUrl/checknewtv.php", headers = mapOf("User-Agent" to userAgentString)).text
-            if (res.isNotBlank()) {
-                val decoded = String(Base64.decode(res.trim(), Base64.DEFAULT)).trim()
-                if (decoded.startsWith("http")) decoded else mainUrl
-            } else mainUrl
-        } catch (e: Exception) {
-            mainUrl
+        for (dom in fallbackDomains) {
+            try {
+                val res = app.get("$dom/checknewtv.php", headers = mapOf("User-Agent" to userAgentString), timeout = 4).text
+                if (res.isNotBlank()) {
+                    if (res.contains("token_hash")) {
+                        val tokenResponse = try { parseJson<NetMirrorTokenResponse>(res) } catch (e: Exception) { null }
+                        val token = tokenResponse?.token_hash
+                        if (!token.isNullOrBlank()) {
+                            val decoded = String(Base64.decode(token.trim(), Base64.DEFAULT)).trim().trimEnd('/')
+                            if (decoded.startsWith("http")) return decoded
+                        }
+                    }
+                    val decoded = try { String(Base64.decode(res.trim(), Base64.DEFAULT)).trim().trimEnd('/') } catch (e: Exception) { "" }
+                    if (decoded.startsWith("http")) return decoded
+                }
+            } catch (e: Exception) {
+                // continue to next domain
+            }
         }
+        return mainUrl
     }
 
+    // 8 Major OTT Platforms Supported by NetMirror
     override val mainPage = mainPageOf(
-        "nf" to "Netflix Trending",
+        "nf" to "Netflix Trending & Hits",
         "pv" to "Prime Video Popular",
-        "hs" to "Hotstar & Disney+ Specials"
+        "hs" to "Disney+ Hotstar Specials",
+        "sn" to "SonyLIV Originals & Shows",
+        "ze" to "Zee5 Movies & Series",
+        "jc" to "JioCinema Blockbusters",
+        "ap" to "Apple TV+ Hits",
+        "cr" to "Crunchyroll & Anime"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val ott = request.data
         val activeDomain = resolveLiveDomain()
-        val url = "$activeDomain/newtv/main.php"
-        val res = app.get(url, headers = getHeaders(ott)).text
-        val response = try { parseJson<NetMirrorCatalogResponse>(res) } catch (e: Exception) { null }
-
         val searchResponses = mutableListOf<SearchResponse>()
-        response?.data?.forEach { section ->
-            section.items?.forEach { item ->
-                val id = item.id ?: return@forEach
-                val title = item.title ?: "Untitled"
-                val poster = item.poster?.let { fixUrl(it, activeDomain) }
-                val type = if (item.type?.contains("series", ignoreCase = true) == true || item.type?.contains("tv", ignoreCase = true) == true) {
-                    TvType.TvSeries
-                } else {
-                    TvType.Movie
-                }
 
-                searchResponses.add(
-                    newMovieSearchResponse(title, "$activeDomain/newtv/post.php?id=$id&ott=$ott", type) {
-                        this.posterUrl = poster
+        // 1. First try direct catalog API
+        try {
+            val url = "$activeDomain/newtv/main.php"
+            val res = app.get(url, headers = getHeaders(ott), timeout = 8).text
+            val response = try { parseJson<NetMirrorCatalogResponse>(res) } catch (e: Exception) { null }
+
+            response?.data?.forEach { section ->
+                section.items?.forEach { item ->
+                    val id = item.id ?: return@forEach
+                    val title = item.title ?: "Untitled"
+                    val poster = item.poster?.let { fixUrl(it, activeDomain) }
+                        ?: "https://imgcdn.kim/poster/v/$id.jpg"
+                    val type = if (item.type?.contains("series", ignoreCase = true) == true || item.type?.contains("tv", ignoreCase = true) == true) {
+                        TvType.TvSeries
+                    } else {
+                        TvType.Movie
                     }
-                )
+
+                    searchResponses.add(
+                        newMovieSearchResponse(title, "$activeDomain/newtv/post.php?id=$id&ott=$ott", type) {
+                            this.posterUrl = poster
+                        }
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore failure, fall back to keyword query
+        }
+
+        // 2. Fallback query if catalog is empty
+        if (searchResponses.isEmpty()) {
+            val queryKeyword = when (ott) {
+                "nf" -> "netflix"
+                "pv" -> "prime"
+                "hs" -> "hotstar"
+                "sn" -> "sonyliv"
+                "ze" -> "zee5"
+                "jc" -> "jiocinema"
+                "ap" -> "apple"
+                "cr" -> "anime"
+                else -> request.name.split(" ").firstOrNull() ?: "popular"
+            }
+
+            try {
+                val searchUrl = "$activeDomain/newtv/search.php?s=${URLEncoder.encode(queryKeyword, "UTF-8")}"
+                val res = app.get(searchUrl, headers = getHeaders(ott), timeout = 8).text
+                val resp = try { parseJson<NetMirrorSearchResponse>(res) } catch (e: Exception) { null }
+
+                resp?.data?.forEach { item ->
+                    val id = item.id ?: return@forEach
+                    val title = item.title ?: "Untitled"
+                    val poster = item.poster?.let { fixUrl(it, activeDomain) }
+                        ?: "https://imgcdn.kim/poster/v/$id.jpg"
+                    val type = if (item.type?.contains("series", ignoreCase = true) == true) TvType.TvSeries else TvType.Movie
+
+                    searchResponses.add(
+                        newMovieSearchResponse(title, "$activeDomain/newtv/post.php?id=$id&ott=$ott", type) {
+                            this.posterUrl = poster
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                // ignore
             }
         }
 
-        return newHomePageResponse(request.name, searchResponses)
+        return newHomePageResponse(request.name, searchResponses.distinctBy { it.url })
     }
 
     override suspend fun search(query: String): List<SearchResponse> = coroutineScope {
         val activeDomain = resolveLiveDomain()
-        val ottList = listOf("nf", "pv", "hs")
+        val ottList = listOf("nf", "pv", "hs", "sn", "ze", "jc", "ap", "cr")
         val cleanQuery = query.trim()
 
         val results = ottList.map { ott ->
@@ -94,17 +166,23 @@ class NetMirrorTVProvider : MainAPI() {
                 try {
                     val encoded = URLEncoder.encode(cleanQuery, "UTF-8")
                     val searchUrl = "$activeDomain/newtv/search.php?s=$encoded"
-                    val res = app.get(searchUrl, headers = getHeaders(ott)).text
+                    val res = app.get(searchUrl, headers = getHeaders(ott), timeout = 8).text
                     val resp = try { parseJson<NetMirrorSearchResponse>(res) } catch (e: Exception) { null }
                     resp?.data?.mapNotNull { item ->
                         val id = item.id ?: return@mapNotNull null
                         val title = item.title ?: return@mapNotNull null
                         val poster = item.poster?.let { fixUrl(it, activeDomain) }
+                            ?: "https://imgcdn.kim/poster/v/$id.jpg"
                         val type = if (item.type?.contains("series", ignoreCase = true) == true) TvType.TvSeries else TvType.Movie
                         val ottBadge = when (ott) {
                             "nf" -> "[Netflix] "
                             "pv" -> "[Prime] "
                             "hs" -> "[Hotstar] "
+                            "sn" -> "[SonyLIV] "
+                            "ze" -> "[Zee5] "
+                            "jc" -> "[JioCinema] "
+                            "ap" -> "[AppleTV+] "
+                            "cr" -> "[Crunchyroll] "
                             else -> ""
                         }
 
@@ -123,13 +201,14 @@ class NetMirrorTVProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val activeDomain = resolveLiveDomain()
-        val ott = if (url.contains("ott=pv")) "pv" else if (url.contains("ott=hs")) "hs" else "nf"
-        val res = app.get(url, headers = getHeaders(ott)).text
+        val ott = extractOttParam(url)
+        val res = app.get(url, headers = getHeaders(ott), timeout = 10).text
         val resp = try { parseJson<NetMirrorPostResponse>(res) } catch (e: Exception) { null }
         val data = resp?.data ?: return null
 
         val title = data.title ?: "NetMirror TV"
         val poster = data.poster?.let { fixUrl(it, activeDomain) }
+            ?: (data.id?.let { "https://imgcdn.kim/poster/v/$it.jpg" })
         val plot = data.desc
         val year = data.year?.toIntOrNull()
         val genres = data.genre?.split(",")?.map { it.trim() }
@@ -147,7 +226,7 @@ class NetMirrorTVProvider : MainAPI() {
                 while (hasNext && page <= 10) {
                     try {
                         val epUrl = "$activeDomain/newtv/episodes.php?id=$seasonId&page=$page"
-                        val epRes = app.get(epUrl, headers = getHeaders(ott)).text
+                        val epRes = app.get(epUrl, headers = getHeaders(ott), timeout = 8).text
                         val epResp = try { parseJson<NetMirrorEpisodeResponse>(epRes) } catch (e: Exception) { null }
                         val eps = epResp?.data ?: break
 
@@ -197,8 +276,8 @@ class NetMirrorTVProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val ott = if (data.contains("ott=pv")) "pv" else if (data.contains("ott=hs")) "hs" else "nf"
-        val res = app.get(data, headers = getHeaders(ott)).text
+        val ott = extractOttParam(data)
+        val res = app.get(data, headers = getHeaders(ott), timeout = 10).text
         val playerResp = try { parseJson<NetMirrorPlayerResponse>(res) } catch (e: Exception) { null }
         val playerData = playerResp?.data ?: return false
 
@@ -280,6 +359,19 @@ class NetMirrorTVProvider : MainAPI() {
         }
 
         return foundLinks
+    }
+
+    private fun extractOttParam(url: String): String {
+        return when {
+            url.contains("ott=pv") -> "pv"
+            url.contains("ott=hs") -> "hs"
+            url.contains("ott=sn") -> "sn"
+            url.contains("ott=ze") -> "ze"
+            url.contains("ott=jc") -> "jc"
+            url.contains("ott=ap") -> "ap"
+            url.contains("ott=cr") -> "cr"
+            else -> "nf"
+        }
     }
 
     private fun fixUrl(url: String, domain: String): String {
