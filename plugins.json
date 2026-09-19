@@ -132,4 +132,27 @@
     "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
-    ]
+  {
+    "name": "CineVood",
+    "internalName": "CinevoodPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "CineVood - Watch & Download Latest Bollywood, Hollywood & South Hindi Dubbed Movies & Web Series with Direct Fast & Multi-Server CDN",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Movie",
+      "TvSeries",
+      "Anime",
+      "AsianDrama"
+    ],
+    "language": "hi",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/CinevoodPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  }
+]
