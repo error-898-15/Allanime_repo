@@ -24,6 +24,10 @@ PLUGIN_META = {
     'RareAnimesPlugin': {
         'name': 'RareAnimes',
         'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
+    },
+    'FlixVisionPlugin': {
+        'name': 'FlixVision',
+        'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png'
     }
 }
 
