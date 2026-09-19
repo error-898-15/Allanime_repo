@@ -10,7 +10,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -55,20 +54,26 @@ class AniflixProvider : MainAPI() {
             null
         }
 
-        val animeList = searchData?.media?.mapNotNull { item ->
-            val id = item.id?.toString() ?: return@mapNotNull null
+        val animeList = mutableListOf<SearchResponse>()
+        searchData?.media?.forEach { item ->
+            val id = item.id?.toString() ?: return@forEach
             val title = item.title?.english?.takeIf { it.isNotBlank() }
                 ?: item.title?.userPreferred?.takeIf { it.isNotBlank() }
                 ?: item.title?.romaji
-                ?: return@mapNotNull null
+                ?: return@forEach
             val poster = item.coverImage?.extraLarge
                 ?: item.coverImage?.large
                 ?: item.image
 
-            newAnimeSearchResponse(title, "$mainUrl/api/anime/episodes?anilistId=$id&animeTitle=${URLEncoder.encode(title, "UTF-8")}") {
-                this.posterUrl = poster
-            }
-        } ?: emptyList()
+            val aid = item.aid?.toString() ?: ""
+            val link = "$mainUrl/api/anime/episodes?anilistId=$id&aid=$aid&animeTitle=${URLEncoder.encode(title, "UTF-8")}"
+            
+            animeList.add(
+                newAnimeSearchResponse(title, link, TvType.Anime) {
+                    this.posterUrl = poster
+                }
+            )
+        }
 
         return newHomePageResponse(
             listOf(HomePageList(request.name, animeList)),
@@ -76,15 +81,21 @@ class AniflixProvider : MainAPI() {
         )
     }
 
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
+
     override suspend fun search(query: String): List<SearchResponse> {
         val searchUrl = "$mainUrl/api/anime/search?q=${URLEncoder.encode(query, "UTF-8")}"
-        val res = app.get(
-            searchUrl,
-            headers = mapOf(
-                "User-Agent" to USER_AGENT,
-                "Referer" to "$mainUrl/"
-            )
-        ).text
+        val res = try {
+            app.get(
+                searchUrl,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Referer" to "$mainUrl/"
+                )
+            ).text
+        } catch (e: Exception) {
+            return emptyList()
+        }
 
         val searchData = try {
             parseJson<AniflixSearchResponse>(res)
@@ -92,44 +103,68 @@ class AniflixProvider : MainAPI() {
             return emptyList()
         }
 
-        return searchData.media?.mapNotNull { item ->
-            val id = item.id?.toString() ?: return@mapNotNull null
+        val results = mutableListOf<SearchResponse>()
+        searchData.media?.forEach { item ->
+            val id = item.id?.toString() ?: return@forEach
             val title = item.title?.english?.takeIf { it.isNotBlank() }
                 ?: item.title?.userPreferred?.takeIf { it.isNotBlank() }
                 ?: item.title?.romaji
-                ?: return@mapNotNull null
+                ?: return@forEach
             val poster = item.coverImage?.extraLarge
                 ?: item.coverImage?.large
                 ?: item.image
 
-            newAnimeSearchResponse(title, "$mainUrl/api/anime/episodes?anilistId=$id&animeTitle=${URLEncoder.encode(title, "UTF-8")}") {
-                this.posterUrl = poster
-            }
-        } ?: emptyList()
+            val aid = item.aid?.toString() ?: ""
+            val link = "$mainUrl/api/anime/episodes?anilistId=$id&aid=$aid&animeTitle=${URLEncoder.encode(title, "UTF-8")}"
+            
+            results.add(
+                newAnimeSearchResponse(title, link, TvType.Anime) {
+                    this.posterUrl = poster
+                }
+            )
+        }
+        return results
     }
 
     override suspend fun load(url: String): LoadResponse {
+        val anilistId: String
+        val aid: String
+        val title: String
+
+        if (url.startsWith("http")) {
+            anilistId = url.substringAfter("anilistId=").substringBefore("&")
+            aid = url.substringAfter("aid=").substringBefore("&")
+            title = url.substringAfter("animeTitle=").substringBefore("&").let {
+                try { URLDecoder.decode(it, "UTF-8") } catch (e: Exception) { it }
+            }
+        } else {
+            val parts = url.split(";")
+            anilistId = parts.getOrNull(0) ?: ""
+            aid = parts.getOrNull(1) ?: ""
+            title = parts.getOrNull(2) ?: "Anime"
+        }
+
+        val apiUrl = if (aid.isNotBlank() && aid != "null") {
+            "$mainUrl/api/anime/episodes?anilistId=$anilistId&aid=$aid"
+        } else {
+            "$mainUrl/api/anime/episodes?anilistId=$anilistId"
+        }
+
         val res = app.get(
-            url,
+            apiUrl,
             headers = mapOf(
                 "User-Agent" to USER_AGENT,
                 "Referer" to "$mainUrl/"
             )
         ).text
 
-        val data = parseJson<AniflixEpisodesResponse>(res)
-        val animeInfo = data.anime ?: throw ErrorLoadingException("Failed to parse anime details from Aniflix API")
-
-        val title = animeInfo.anime_name
-            ?: url.substringAfter("animeTitle=").substringBefore("&").let { URLDecoder.decode(it, "UTF-8") }
-        val anilistId = animeInfo.anilist_id?.toString()
-            ?: url.substringAfter("anilistId=").substringBefore("&")
-        val aid = animeInfo.aid?.toString() ?: ""
-
+        val epData = parseJson<AniflixEpisodesResponse>(res)
+        val animeInfo = epData.anime ?: throw ErrorLoadingException("Failed to load anime details")
         val episodesList = mutableListOf<Episode>()
+
         animeInfo.episodes?.forEach { ep ->
             val epNumber = ep.ep_no ?: return@forEach
-            val epName = ep.ep_title?.takeIf { it.isNotBlank() } ?: "Episode $epNumber"
+            val epTitle = ep.ep_title ?: "Episode $epNumber"
             val thumb = ep.thumbnail_default?.takeIf { it.isNotBlank() }
                 ?: ep.thumbnail_tvdb?.takeIf { it.isNotBlank() }
 
@@ -159,21 +194,24 @@ class AniflixProvider : MainAPI() {
                 anivexa = anivexaLinks
             )
 
-            episodesList.add(
-                newEpisode(toJson(payload)) {
-                    this.name = epName
-                    this.episode = epNumber
-                    this.posterUrl = thumb
-                    this.description = ep.synopsis
-                }
-            )
+            val jsonPayload = toJson(payload)
+            val epItem = newEpisode(jsonPayload) {
+                this.name = epTitle
+                this.episode = epNumber
+                this.posterUrl = thumb
+                this.description = ep.synopsis
+            }
+            episodesList.add(epItem)
         }
 
-        return newAnimeLoadResponse(title, url, TvType.Anime) {
-            this.posterUrl = animeInfo.cover_image?.takeIf { it.isNotBlank() }
-            this.plot = animeInfo.description
+        val poster = animeInfo.cover_image?.takeIf { it.isNotBlank() }
+            ?: animeInfo.episodes?.firstOrNull()?.thumbnail_default
+
+        return newTvSeriesLoadResponse(title, url, TvType.Anime, episodesList) {
+            this.posterUrl = poster
+            this.backgroundPosterUrl = poster
+            this.plot = animeInfo.description ?: animeInfo.episodes?.firstOrNull()?.synopsis
             this.tags = animeInfo.genres
-            this.episodes = episodesList.sortedBy { it.episode }
         }
     }
 
@@ -198,7 +236,7 @@ class AniflixProvider : MainAPI() {
         val malId = payload.malId.ifBlank { payload.id }
         val epNo = payload.ep
 
-        // 1. ORIGINAL PRIMARY SERVER: MegaVid (Server Alias: Saitama) - Direct HLS for Sub and Dub
+        // 1. MegaVid (Saitama HLS)
         listOf("sub", "dub").forEach { variant ->
             try {
                 val srcUrl = "https://megavid.buzz/mal/$malId/$epNo/$variant/source"
@@ -214,19 +252,18 @@ class AniflixProvider : MainAPI() {
                 if (!hlsUrl.isNullOrBlank() && hlsUrl.startsWith("http")) {
                     val label = if (variant == "dub") "MegaVid (Saitama - Dub HLS)" else "MegaVid (Saitama - Sub HLS)"
                     callback.invoke(
-                        newExtractorLink(
+                        ExtractorLink(
                             source = this.name,
                             name = label,
                             url = hlsUrl,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = "https://megavid.buzz/"
-                            this.headers = mapOf(
+                            referer = "https://megavid.buzz/",
+                            quality = Qualities.P1080.value,
+                            type = ExtractorLinkType.M3U8,
+                            headers = mapOf(
                                 "User-Agent" to USER_AGENT,
                                 "Referer" to "https://megavid.buzz/"
                             )
-                            this.quality = Qualities.P1080.value
-                        }
+                        )
                     )
                     loadedAny = true
 
@@ -264,7 +301,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 2. ORIGINAL PRIMARY SERVER: Anixo (Server Alias: Madara) - Direct HLS Master Stream (Sub & Dub)
+        // 2. Anixo (Madara HLS)
         listOf("sub", "dub").forEach { variant ->
             try {
                 val anixoUrl = "https://anixo.buzz/embed/ani/${payload.id}/$epNo/$variant?color=%23ff0000"
@@ -280,19 +317,18 @@ class AniflixProvider : MainAPI() {
                 m3u8Matches.forEachIndexed { idx, m3u8Url ->
                     val label = "Anixo (Madara - ${variant.uppercase()}" + (if (idx > 0) " Backup $idx)" else ")")
                     callback.invoke(
-                        newExtractorLink(
+                        ExtractorLink(
                             source = this.name,
                             name = label,
                             url = m3u8Url,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = "https://anixo.buzz/"
-                            this.headers = mapOf(
+                            referer = "https://anixo.buzz/",
+                            quality = Qualities.P1080.value,
+                            type = ExtractorLinkType.M3U8,
+                            headers = mapOf(
                                 "User-Agent" to USER_AGENT,
                                 "Referer" to "https://anixo.buzz/"
                             )
-                            this.quality = Qualities.P1080.value
-                        }
+                        )
                     )
                     loadedAny = true
                 }
@@ -300,7 +336,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 3. ANIFLIX OFFICIAL SOURCES: Anivexa / Anikoto / AniNeko / Sukuna / ReAnime
+        // 3. Anivexa / Sukuna Sources
         payload.anivexa.take(4).forEach { anivexaPath ->
             try {
                 val apiUrl = if (anivexaPath.startsWith("http")) anivexaPath else "$mainUrl$anivexaPath"
@@ -319,19 +355,18 @@ class AniflixProvider : MainAPI() {
                         val fullUrl = if (streamUrl.startsWith("/")) "$mainUrl$streamUrl" else streamUrl
                         val serverName = src.server ?: src.provider ?: "Anivexa"
                         callback.invoke(
-                            newExtractorLink(
+                            ExtractorLink(
                                 source = this.name,
                                 name = "Aniflix - $serverName (HLS)",
                                 url = fullUrl,
-                                type = ExtractorLinkType.M3U8
-                            ) {
-                                this.referer = src.referer ?: "$mainUrl/"
-                                this.headers = mapOf(
+                                referer = src.referer ?: "$mainUrl/",
+                                quality = Qualities.P1080.value,
+                                type = ExtractorLinkType.M3U8,
+                                headers = mapOf(
                                     "User-Agent" to USER_AGENT,
                                     "Referer" to (src.referer ?: "$mainUrl/")
                                 )
-                                this.quality = Qualities.P1080.value
-                            }
+                            )
                         )
                         loadedAny = true
                     }
@@ -350,7 +385,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 4. ORIGINAL SERVER: Filemoon (Server Alias: Igris) - Direct Full HD Extractor
+        // 4. Filemoon Extractor
         if (!payload.fileCode.isNullOrBlank()) {
             try {
                 val filemoonUrl = "https://filemoon.sx/e/${payload.fileCode}"
@@ -361,7 +396,7 @@ class AniflixProvider : MainAPI() {
             }
         }
 
-        // 5. ORIGINAL SERVER: DesiDub (Server Alias: Greed - Hindi Dub & Multi-Audio Embeds)
+        // 5. DesiDub Hindi Dub
         if (!payload.desiDid.isNullOrBlank()) {
             try {
                 val desiApi = "$mainUrl/api/anime/episode-embeds?provider=desidub&did=${payload.desiDid}"
@@ -391,7 +426,6 @@ class AniflixProvider : MainAPI() {
         return loadedAny
     }
 
-    // JSON Data Transfer Models
     @JsonIgnoreProperties(ignoreUnknown = true)
     data class AniflixSearchResponse(
         @JsonProperty("ok") val ok: Boolean? = null,
