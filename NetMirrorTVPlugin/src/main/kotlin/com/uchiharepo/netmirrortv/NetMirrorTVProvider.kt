@@ -30,7 +30,8 @@ class NetMirrorTVProvider : MainAPI() {
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept" to "*/*",
         "Accept-Language" to "en-US,en;q=0.9",
-        "Referer" to "$mainUrl/"
+        "Referer" to "$mainUrl/",
+        "Cookie" to "hd=on"
     )
 
     private val newTvBaseHeaders = mapOf(
@@ -180,7 +181,7 @@ class NetMirrorTVProvider : MainAPI() {
 
         val apiBase = getApiBaseUrl()
 
-        // Try rich NewTV API metadata
+        // 1. Query NewTV API for full metadata & all seasons/episodes
         for (ott in listOf("nf", "pv", "hs")) {
             val postUrl = "$apiBase/newtv/post.php?id=$postId"
             val headers = newTvBaseHeaders.toMutableMap().apply { this["Ott"] = ott }
@@ -193,26 +194,82 @@ class NetMirrorTVProvider : MainAPI() {
             val postData = res?.text?.let { tryParseJson<NewTvPostData>(it) }
             if (postData != null && postData.status == "ok") {
                 val realTitle = postData.title?.takeIf { it.isNotBlank() }?.let { cleanDisplayTitle(it) } ?: fallbackTitle
-                val episodes = postData.episodes.orEmpty().filterNotNull().filter { !it.id.isNullOrBlank() }
+                val allEpisodes = mutableListOf<Episode>()
+                val seenEpIds = mutableSetOf<String>()
 
-                if (episodes.isNotEmpty()) {
-                    val csEpisodes = episodes.mapIndexedNotNull { idx, ep ->
-                        val epId = ep.id ?: return@mapIndexedNotNull null
-                        val epNum = ep.ep?.toIntOrNull() ?: (idx + 1)
-                        val seasonNum = ep.info?.filterNotNull()
-                            ?.firstOrNull { it.startsWith("S", ignoreCase = true) }
-                            ?.substring(1)?.toIntOrNull() ?: 1
+                // Multi-season TV Show detection
+                val seasonList = postData.season.orEmpty().filterNotNull().filter { !it.id.isNullOrBlank() }
+                if (seasonList.isNotEmpty()) {
+                    seasonList.forEachIndexed { sIdx, seasonItem ->
+                        val seasonId = seasonItem.id ?: return@forEachIndexed
+                        val seasonNumMatch = Regex("Season\\s*(\\d+)", RegexOption.IGNORE_CASE).find(seasonItem.s ?: "")
+                        val seasonNum = seasonNumMatch?.groupValues?.getOrNull(1)?.toIntOrNull() ?: (sIdx + 1)
 
-                        newEpisode(epId) {
-                            this.name = ep.title?.takeIf { it.isNotBlank() } ?: "Episode $epNum"
-                            this.season = seasonNum
-                            this.episode = epNum
-                            this.posterUrl = "https://imgcdn.kim/epimg/150/$epId.jpg"
-                            this.description = ep.epDesc
+                        var currentPage = 1
+                        var hasMorePages = true
+
+                        while (hasMorePages && currentPage <= 20) {
+                            val epUrl = "$apiBase/newtv/episodes.php?id=$seasonId&page=$currentPage"
+                            val epRes = try {
+                                app.get(epUrl, headers = headers, timeout = 6)
+                            } catch (_: Throwable) {
+                                null
+                            }
+
+                            val epPageData = epRes?.text?.let { tryParseJson<NewTvPostData>(it) }
+                            val pageEpisodes = epPageData?.episodes.orEmpty().filterNotNull().filter { !it.id.isNullOrBlank() }
+
+                            if (pageEpisodes.isEmpty()) break
+
+                            pageEpisodes.forEachIndexed { epIdx, ep ->
+                                val epId = ep.id ?: return@forEachIndexed
+                                if (seenEpIds.add(epId)) {
+                                    val epNum = ep.ep?.toIntOrNull() ?: (allEpisodes.size + 1)
+                                    val epName = ep.title?.takeIf { it.isNotBlank() } ?: "Episode $epNum"
+
+                                    allEpisodes.add(newEpisode(epId) {
+                                        this.name = epName
+                                        this.season = seasonNum
+                                        this.episode = epNum
+                                        this.posterUrl = "https://imgcdn.kim/epimg/150/$epId.jpg"
+                                        this.description = ep.epDesc
+                                    })
+                                }
+                            }
+
+                            if (epPageData?.nextPageShow == 1) {
+                                currentPage++
+                            } else {
+                                hasMorePages = false
+                            }
                         }
                     }
+                }
 
-                    return newTvSeriesLoadResponse(realTitle, url, TvType.TvSeries, csEpisodes) {
+                // If no seasons list or single season, parse direct episodes
+                if (allEpisodes.isEmpty()) {
+                    val directEpisodes = postData.episodes.orEmpty().filterNotNull().filter { !it.id.isNullOrBlank() }
+                    directEpisodes.forEachIndexed { idx, ep ->
+                        val epId = ep.id ?: return@forEachIndexed
+                        if (seenEpIds.add(epId)) {
+                            val epNum = ep.ep?.toIntOrNull() ?: (idx + 1)
+                            val seasonNum = ep.info?.filterNotNull()
+                                ?.firstOrNull { it.startsWith("S", ignoreCase = true) }
+                                ?.substring(1)?.toIntOrNull() ?: 1
+
+                            allEpisodes.add(newEpisode(epId) {
+                                this.name = ep.title?.takeIf { it.isNotBlank() } ?: "Episode $epNum"
+                                this.season = seasonNum
+                                this.episode = epNum
+                                this.posterUrl = "https://imgcdn.kim/epimg/150/$epId.jpg"
+                                this.description = ep.epDesc
+                            })
+                        }
+                    }
+                }
+
+                if (allEpisodes.isNotEmpty()) {
+                    return newTvSeriesLoadResponse(realTitle, url, TvType.TvSeries, allEpisodes) {
                         this.posterUrl = posterUrl
                         this.backgroundPosterUrl = backdropUrl
                         this.plot = postData.desc
@@ -229,7 +286,7 @@ class NetMirrorTVProvider : MainAPI() {
             }
         }
 
-        // Fallback to single movie load if NewTV post.php didn't return
+        // Fallback for single movies
         return newMovieLoadResponse(fallbackTitle, url, TvType.Movie, postId) {
             this.posterUrl = posterUrl
             this.backgroundPosterUrl = backdropUrl
@@ -251,12 +308,12 @@ class NetMirrorTVProvider : MainAPI() {
         val apiBase = getApiBaseUrl()
         var foundAny = false
 
-        // 1. Primary High-Speed NewTV Player API
+        // 1. Primary Source: NewTV Player API
         for (ott in listOf("nf", "pv", "hs")) {
             val playerUrl = "$apiBase/newtv/player.php?id=$episodeId"
             val headers = newTvBaseHeaders.toMutableMap().apply {
                 this["Ott"] = ott
-                this["Usertoken"] = ""
+                this["Usertoken"] = "none"
             }
 
             val res = try {
@@ -269,18 +326,16 @@ class NetMirrorTVProvider : MainAPI() {
             val videoLink = playerData.videoLink
             if (videoLink.isNullOrBlank()) continue
 
-            val refererHeader = playerData.referer ?: mainUrl
-
-            // 1a. Emit Master M3U8 stream
+            // Emit Master M3U8 link
             callback(
                 newExtractorLink(
                     source = name,
-                    name = "$name [Auto/Master]",
+                    name = "$name [Server 1 - Auto HD]",
                     url = videoLink,
                     type = ExtractorLinkType.M3U8
                 ) {
                     this.quality = Qualities.P1080.value
-                    this.referer = refererHeader
+                    this.referer = "$mainUrl/"
                     this.headers = mapOf(
                         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                         "Referer" to "$mainUrl/",
@@ -290,7 +345,7 @@ class NetMirrorTVProvider : MainAPI() {
             )
             foundAny = true
 
-            // 1b. Inspect Master M3U8 to extract specific qualities and subtitles
+            // Extract subtitles embedded in Master M3U8
             try {
                 val m3u8Res = app.get(
                     videoLink,
@@ -302,7 +357,6 @@ class NetMirrorTVProvider : MainAPI() {
                 )
                 val m3u8Content = m3u8Res.text
 
-                // Extract Subtitles
                 val subPattern = Pattern.compile("""#EXT-X-MEDIA:TYPE=SUBTITLES.*?NAME="([^"]+)".*?URI="([^"]+)"""", Pattern.CASE_INSENSITIVE)
                 val subMatcher = subPattern.matcher(m3u8Content)
                 while (subMatcher.find()) {
@@ -310,64 +364,23 @@ class NetMirrorTVProvider : MainAPI() {
                     val subUri = subMatcher.group(2) ?: continue
                     subtitleCallback(SubtitleFile(subName, subUri))
                 }
-
-                // Extract Resolution Streams (e.g., 1080p, 720p, 480p)
-                val streamPattern = Pattern.compile("""RESOLUTION=(\d+x\d+).*?\r?\n(https?://[^\r\n]+)""", Pattern.CASE_INSENSITIVE)
-                val streamMatcher = streamPattern.matcher(m3u8Content)
-                while (streamMatcher.find()) {
-                    val resText = streamMatcher.group(1) ?: ""
-                    val streamUrl = streamMatcher.group(2) ?: continue
-                    val qualityVal = when {
-                        resText.contains("1080") -> Qualities.P1080.value
-                        resText.contains("720") -> Qualities.P720.value
-                        resText.contains("480") -> Qualities.P480.value
-                        else -> Qualities.Unknown.value
-                    }
-                    val label = when {
-                        resText.contains("1080") -> "1080p Full HD"
-                        resText.contains("720") -> "720p HD"
-                        resText.contains("480") -> "480p SD"
-                        else -> resText
-                    }
-
-                    callback(
-                        newExtractorLink(
-                            source = name,
-                            name = "$name [$label]",
-                            url = streamUrl,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.quality = qualityVal
-                            this.referer = "$mainUrl/"
-                            this.headers = mapOf(
-                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                                "Referer" to "$mainUrl/",
-                                "Origin" to mainUrl
-                            )
-                        }
-                    )
-                }
             } catch (_: Throwable) {
             }
 
             break
         }
 
-        // 2. Fallback to direct web playlist if needed
-        if (!foundAny) {
+        // 2. Secondary Source: Net52 Web Playlist API (Direct Streams & SRTs)
+        try {
             val playlistUrl = "$mainUrl/playlist.php?id=$episodeId"
-            val res = try {
-                app.get(playlistUrl, headers = commonHeaders, timeout = 8)
-            } catch (_: Throwable) {
-                null
-            }
+            val res = app.get(playlistUrl, headers = commonHeaders, timeout = 8)
+            val playlists = tryParseJson<List<NetMirrorPlayList>>(res.text)
 
-            val playlists = res?.text?.let { tryParseJson<List<NetMirrorPlayList>>(it) }
             playlists?.forEach { playlist ->
                 playlist.tracks?.forEach { track ->
                     val subFile = track.file ?: return@forEach
-                    val subUrl = if (subFile.startsWith("http")) subFile else "$mainUrl$subFile"
-                    val subLabel = track.label ?: "Sub"
+                    val subUrl = if (subFile.startsWith("//")) "https:$subFile" else if (subFile.startsWith("http")) subFile else "$mainUrl$subFile"
+                    val subLabel = track.label ?: "Subtitle"
                     subtitleCallback(SubtitleFile(subLabel, subUrl))
                 }
 
@@ -376,21 +389,32 @@ class NetMirrorTVProvider : MainAPI() {
                     val fileUrl = if (rawFile.startsWith("http")) rawFile else "$mainUrl$rawFile"
                     val label = source.label ?: "HD"
 
+                    val qValue = when {
+                        label.contains("Full", ignoreCase = true) -> Qualities.P1080.value
+                        label.contains("Mid", ignoreCase = true) -> Qualities.P720.value
+                        else -> Qualities.P480.value
+                    }
+
                     callback(
                         newExtractorLink(
                             source = name,
-                            name = "$name [$label]",
+                            name = "$name [Server 2 - $label]",
                             url = fileUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            this.quality = Qualities.P1080.value
+                            this.quality = qValue
                             this.referer = "$mainUrl/"
-                            this.headers = commonHeaders
+                            this.headers = mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                                "Referer" to "$mainUrl/",
+                                "Origin" to mainUrl
+                            )
                         }
                     )
                     foundAny = true
                 }
             }
+        } catch (_: Throwable) {
         }
 
         return foundAny
@@ -452,4 +476,4 @@ class NetMirrorTVProvider : MainAPI() {
         startsWith("http:") -> "https${substring(4)}"
         else -> this
     }
-                                                 }
+}
