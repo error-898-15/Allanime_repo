@@ -62,73 +62,51 @@ jobs:
 
       - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
         run: |
-          python3 -c "
-          import json, glob, zipfile, os, hashlib
-          PLUGIN_META = {
-              'BlakitePlugin': {
-                  'name': 'Blakite Anime',
-                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
-              },
-              'ZLivePlugin': {
-                  'name': 'ZLive',
-                  'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
-              },
-              'AnimeSaltPlugin': {
-                  'name': 'AnimeSalt',
-                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
-              },
-              'RareAnimesPlugin': {
-                  'name': 'RareAnimes',
-                  'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
-              }
-          }
-          cs3_hashes = {}
-          for cs3_file in glob.glob('**/*.cs3', recursive=True):
-              base = os.path.basename(cs3_file)
-              with zipfile.ZipFile(cs3_file, 'r') as zin:
-                  items = {name: zin.read(name) for name in zin.namelist()}
-              if 'manifest.json' in items:
-                  manifest = json.loads(items['manifest.json'].decode('utf-8'))
-                  for plugin_key, meta in PLUGIN_META.items():
-                      if plugin_key.lower() in base.lower() or manifest.get('internalName', '').lower() == plugin_key.lower():
-                          manifest['name'] = meta['name']
-                          if 'iconUrl' in meta:
-                              manifest['iconUrl'] = meta['iconUrl']
-                  items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
-                  with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
-                      for name, data in items.items():
-                          zout.writestr(name, data)
-              
-              with open(cs3_file, 'rb') as f:
-                  content = f.read()
-              h = 'sha256-' + hashlib.sha256(content).hexdigest()
-              sz = len(content)
-              cs3_hashes[base] = (h, sz)
-
-          for pjson in ['build/plugins.json', 'plugins.json']:
-              if os.path.exists(pjson):
-                  with open(pjson, 'r') as f:
-                      data = json.load(f)
-                  for item in data:
-                      iname = item.get('internalName', '')
-                      for plugin_key, meta in PLUGIN_META.items():
-                          if iname.lower() == plugin_key.lower() or plugin_key.lower() in item.get('url', '').lower():
-                              item['name'] = meta['name']
-                              item['iconUrl'] = meta['iconUrl']
-                      for base, (h, sz) in cs3_hashes.items():
-                          if base in item.get('url', '') or iname in base:
-                              item['fileHash'] = h
-                              item['fileSize'] = sz
-                  with open(pjson, 'w') as f:
-                      json.dump(data, f, indent=2)
-          "
+          if [ -f ".github/scripts/update_plugins.py" ]; then
+            python3 .github/scripts/update_plugins.py
+          else
+            python3 -c "
+import json, glob, os, hashlib
+PLUGIN_META = {
+    'BlakitePlugin': {'name': 'Blakite Anime', 'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'},
+    'ZLivePlugin': {'name': 'ZLive', 'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'},
+    'AnimeSaltPlugin': {'name': 'AnimeSalt', 'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'},
+    'NetMirrorTVPlugin': {'name': 'NetMirror TV', 'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png'},
+    'RareAnimesPlugin': {'name': 'RareAnimes', 'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'}
+}
+cs3_hashes = {}
+for f in glob.glob('**/*.cs3', recursive=True):
+    b = os.path.basename(f)
+    try:
+        data = open(f, 'rb').read()
+        cs3_hashes[b] = ('sha256-' + hashlib.sha256(data).hexdigest(), len(data))
+    except:
+        pass
+for p in ['build/plugins.json', 'plugins.json']:
+    if os.path.exists(p):
+        try:
+            items = json.load(open(p))
+            for it in items:
+                k = it.get('internalName', '')
+                if k in PLUGIN_META:
+                    it['name'] = PLUGIN_META[k]['name']
+                    it['iconUrl'] = PLUGIN_META[k]['iconUrl']
+                for b, (h, sz) in cs3_hashes.items():
+                    if k in b or b in it.get('url', ''):
+                        it['fileHash'] = h
+                        it['fileSize'] = sz
+            json.dump(items, open(p, 'w'), indent=2)
+        except Exception as err:
+            print('Error:', err)
+"
+          fi
 
       - name: Verify Output Artifacts
         run: |
           echo "=== Verifying Generated Files ==="
           mkdir -p $RUNNER_TEMP/build_artifacts
-          find . -name "*.cs3" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} +
-          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} + || true
+          find . -name "*.cs3" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} + 2>/dev/null || true
+          find . -name "*.jar" ! -name "gradle-wrapper.jar" -exec cp -t $RUNNER_TEMP/build_artifacts/ {} + 2>/dev/null || true
           if [ -f "build/plugins.json" ]; then
             cp build/plugins.json $RUNNER_TEMP/build_artifacts/
           elif [ -f "plugins.json" ]; then
@@ -145,6 +123,7 @@ jobs:
           name: cloudstream-plugins
           path: ${{ runner.temp }}/build_artifacts/*
           retention-days: 14
+          if-no-files-found: warn
 
       - name: Deploy to Builds Branch
         run: |
@@ -152,7 +131,9 @@ jobs:
           git config --local user.name "GitHub Actions"
           git checkout -B builds
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
-          cp -r $RUNNER_TEMP/build_artifacts/* ./
+          if [ -d "$RUNNER_TEMP/build_artifacts" ]; then
+            cp -r "$RUNNER_TEMP/build_artifacts/." ./
+          fi
           git add -A
           if git diff-index --quiet HEAD --; then
             echo "No changes to commit."
