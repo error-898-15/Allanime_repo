@@ -30,13 +30,39 @@ class FlixVisionProvider : MainAPI() {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     }
 
+    // Extensive genre categories and sections (strictly no emojis)
     override val mainPage = mainPageOf(
         "$mainUrl/trending/movie/day?api_key=$TMDB_API_KEY" to "Trending Movies",
         "$mainUrl/trending/tv/day?api_key=$TMDB_API_KEY" to "Trending TV Series",
         "$mainUrl/movie/popular?api_key=$TMDB_API_KEY" to "Popular Movies",
         "$mainUrl/tv/popular?api_key=$TMDB_API_KEY" to "Popular TV Shows",
         "$mainUrl/movie/top_rated?api_key=$TMDB_API_KEY" to "Top Rated Movies",
-        "$mainUrl/tv/top_rated?api_key=$TMDB_API_KEY" to "Top Rated TV Series"
+        "$mainUrl/tv/top_rated?api_key=$TMDB_API_KEY" to "Top Rated TV Series",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=28&sort_by=popularity.desc" to "Action Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=12&sort_by=popularity.desc" to "Adventure Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=16&sort_by=popularity.desc" to "Animation Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=35&sort_by=popularity.desc" to "Comedy Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=80&sort_by=popularity.desc" to "Crime Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=99&sort_by=popularity.desc" to "Documentary Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=18&sort_by=popularity.desc" to "Drama Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=10751&sort_by=popularity.desc" to "Family Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=14&sort_by=popularity.desc" to "Fantasy Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=36&sort_by=popularity.desc" to "History Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=27&sort_by=popularity.desc" to "Horror Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=10402&sort_by=popularity.desc" to "Music Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=9648&sort_by=popularity.desc" to "Mystery Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=10749&sort_by=popularity.desc" to "Romance Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=878&sort_by=popularity.desc" to "Sci-Fi Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=53&sort_by=popularity.desc" to "Thriller Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=10752&sort_by=popularity.desc" to "War Movies",
+        "$mainUrl/discover/movie?api_key=$TMDB_API_KEY&with_genres=37&sort_by=popularity.desc" to "Western Movies",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=10759&sort_by=popularity.desc" to "Action & Adventure Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=16&sort_by=popularity.desc" to "Animation Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=35&sort_by=popularity.desc" to "Comedy Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=80&sort_by=popularity.desc" to "Crime Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=99&sort_by=popularity.desc" to "Documentary Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=18&sort_by=popularity.desc" to "Drama Series",
+        "$mainUrl/discover/tv?api_key=$TMDB_API_KEY&with_genres=10765&sort_by=popularity.desc" to "Sci-Fi & Fantasy Series"
     )
 
     override suspend fun getMainPage(
@@ -46,6 +72,7 @@ class FlixVisionProvider : MainAPI() {
         val url = "${request.data}&page=$page"
         val response = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).text
         val parsed = parseJson<TmdbPageResponse>(response)
+
         val homeItems = parsed.results?.mapNotNull { item ->
             item.toSearchResponse()
         } ?: emptyList()
@@ -97,8 +124,8 @@ class FlixVisionProvider : MainAPI() {
 
         val tmdbId = linkData.id
         val isTv = linkData.type == "tv"
-        val detailsUrl = "$mainUrl/${linkData.type}/$tmdbId?api_key=$TMDB_API_KEY&append_to_response=credits,external_ids"
 
+        val detailsUrl = "$mainUrl/${linkData.type}/$tmdbId?api_key=$TMDB_API_KEY&append_to_response=credits,external_ids"
         val response = app.get(detailsUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
         val details = parseJson<TmdbDetailsResponse>(response)
 
@@ -109,18 +136,31 @@ class FlixVisionProvider : MainAPI() {
         val tags = details.genres?.mapNotNull { it.name } ?: emptyList()
         val year = (details.releaseDate ?: details.firstAirDate)?.take(4)?.toIntOrNull()
 
+        // Extract and map cast members (Fix for Bug 1: Cast not showing)
+        val actors = details.credits?.cast?.mapNotNull { castItem ->
+            val actorName = castItem.name ?: return@mapNotNull null
+            val actorRole = castItem.character ?: ""
+            val actorImage = castItem.profilePath?.let { "$TMDB_IMG_W500$it" }
+            ActorData(
+                actor = Actor(actorName, actorImage),
+                roleString = actorRole
+            )
+        } ?: emptyList()
+
         if (!isTv) {
             val movieData = MediaPlayData(
                 id = tmdbId,
                 type = "movie",
                 title = title
             ).toJson()
+
             return newMovieLoadResponse(title, url, TvType.Movie, movieData) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = backdrop
                 this.plot = plot
                 this.tags = tags
                 this.year = year
+                this.actors = actors
             }
         } else {
             val episodes = mutableListOf<Episode>()
@@ -131,6 +171,7 @@ class FlixVisionProvider : MainAPI() {
                     val seasonUrl = "$mainUrl/tv/$tmdbId/season/$s?api_key=$TMDB_API_KEY"
                     val sRes = app.get(seasonUrl, headers = mapOf("User-Agent" to USER_AGENT)).text
                     val seasonData = parseJson<TmdbSeasonResponse>(sRes)
+
                     seasonData.episodes?.forEach { ep ->
                         val epNum = ep.episodeNumber ?: return@forEach
                         val epData = MediaPlayData(
@@ -140,6 +181,7 @@ class FlixVisionProvider : MainAPI() {
                             episode = epNum,
                             title = title
                         ).toJson()
+
                         episodes.add(
                             newEpisode(epData) {
                                 this.name = ep.name ?: "Episode $epNum"
@@ -160,6 +202,7 @@ class FlixVisionProvider : MainAPI() {
                 this.plot = plot
                 this.tags = tags
                 this.year = year
+                this.actors = actors
             }
         }
     }
@@ -182,13 +225,112 @@ class FlixVisionProvider : MainAPI() {
         val episode = playData.episode ?: 1
         var loadedAny = false
 
-        // 1. [FVSTREAM 4] · [DIRECT] (Cloudnestra / VSEmbed Realtime API)
+        // =========================================================================
+        // SERVER 1: [2EMBED] · [DIRECT] (High reliability multi-source embed)
+        // =========================================================================
+        try {
+            val twoEmbedUrl = if (isTv) {
+                "https://www.2embed.cc/embedtv/$tmdbId&s=$season&e=$episode"
+            } else {
+                "https://www.2embed.cc/embed/$tmdbId"
+            }
+            if (loadExtractor(twoEmbedUrl, "https://www.2embed.cc/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // 2Embed error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 2: [VIDSRC.ME] · [MULTI] (High-speed multi-source embed)
+        // =========================================================================
+        try {
+            val vidsrcMeUrl = if (isTv) {
+                "https://vidsrc.me/embed/tv?tmdb=$tmdbId&season=$season&episode=$episode"
+            } else {
+                "https://vidsrc.me/embed/movie?tmdb=$tmdbId"
+            }
+            if (loadExtractor(vidsrcMeUrl, "https://vidsrc.me/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // VidSrc.me error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 3: [FVSTREAM 1] · [VIDSRC.TO] · [DIRECT]
+        // =========================================================================
+        try {
+            val vidsrcUrl = if (isTv) {
+                "https://vidsrc.to/embed/tv/$tmdbId/$season/$episode"
+            } else {
+                "https://vidsrc.to/embed/movie/$tmdbId"
+            }
+            if (loadExtractor(vidsrcUrl, "https://vidsrc.to/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // VidSrc error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 4: [SMASHYSTREAM] · [DIRECT]
+        // =========================================================================
+        try {
+            val smashyUrl = if (isTv) {
+                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId&season=$season&episode=$episode"
+            } else {
+                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId"
+            }
+            if (loadExtractor(smashyUrl, "https://embed.smashystream.com/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // SmashyStream error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 5: [AUTOEMBED] · [DIRECT]
+        // =========================================================================
+        try {
+            val autoembedUrl = if (isTv) {
+                "https://player.autoembed.co/embed/tv/$tmdbId/$season/$episode"
+            } else {
+                "https://player.autoembed.co/embed/movie/$tmdbId"
+            }
+            if (loadExtractor(autoembedUrl, "https://autoembed.co/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // Autoembed error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 6: [VIDSRC-EMBED] · [DIRECT]
+        // =========================================================================
+        try {
+            val vsEmbedUrl = if (isTv) {
+                "https://vidsrc-embed.ru/embed/tv/$tmdbId/$season/$episode"
+            } else {
+                "https://vidsrc-embed.ru/embed/movie/$tmdbId"
+            }
+            if (loadExtractor(vsEmbedUrl, "https://vidsrc-embed.ru/", subtitleCallback, callback)) {
+                loadedAny = true
+            }
+        } catch (e: Exception) {
+            // vsEmbed error suppressed
+        }
+
+        // =========================================================================
+        // SERVER 7: [FVSTREAM 4] · [DIRECT] (Cloudnestra / VSEmbed Realtime API)
+        // =========================================================================
         try {
             val vsembedApi = if (isTv) {
                 "https://vsembed.ru/vs_src.php?type=tv&id=$tmdbId&s=$season&e=$episode"
             } else {
                 "https://vsembed.ru/vs_src.php?type=movie&id=$tmdbId"
             }
+
             val vsRes = app.get(
                 vsembedApi,
                 headers = mapOf(
@@ -227,83 +369,19 @@ class FlixVisionProvider : MainAPI() {
                 }
             }
         } catch (e: Exception) {
-            // Suppress Server 4 exception
+            // Cloudnestra error suppressed
         }
 
-        // 2. [FVSTREAM 1] · [VIDSRC] · [DIRECT]
-        try {
-            val vidsrcUrl = if (isTv) {
-                "https://vidsrc.to/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://vidsrc.to/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(vidsrcUrl, "https://vidsrc.to/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Suppress VidSrc exception
-        }
-
-        // 3. [SMASHYSTREAM] · [DIRECT]
-        try {
-            val smashyUrl = if (isTv) {
-                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId&season=$season&episode=$episode"
-            } else {
-                "https://embed.smashystream.com/playere.php?tmdb=$tmdbId"
-            }
-            if (loadExtractor(smashyUrl, "https://embed.smashystream.com/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Suppress SmashyStream exception
-        }
-
-        // 4. [AUTOEMBED] · [DIRECT]
-        try {
-            val autoembedUrl = if (isTv) {
-                "https://player.autoembed.co/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://player.autoembed.co/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(autoembedUrl, "https://autoembed.co/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Suppress AutoEmbed exception
-        }
-
-        // 5. [VIDSRC-EMBED] · [DIRECT]
-        try {
-            val vsEmbedUrl = if (isTv) {
-                "https://vidsrc-embed.ru/embed/tv/$tmdbId/$season/$episode"
-            } else {
-                "https://vidsrc-embed.ru/embed/movie/$tmdbId"
-            }
-            if (loadExtractor(vsEmbedUrl, "https://vidsrc-embed.ru/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Suppress vsEmbed exception
-        }
-
-        // 6. 1080p · [FVSTREAM 2] · [DIRECT] · English (VixCloud)
-        try {
-            val vixUrl = "https://vixcloud.co/embed/$tmdbId"
-            if (loadExtractor(vixUrl, "https://vixcloud.co/", subtitleCallback, callback)) {
-                loadedAny = true
-            }
-        } catch (e: Exception) {
-            // Suppress VixCloud exception
-        }
-
-        // 7. 1080p · [FVSTREAM 3] · [DIRECT] · English (CloseLoad)
+        // =========================================================================
+        // SERVER 8: 1080p · [FVSTREAM 3] · [DIRECT] · English (CloseLoad)
+        // =========================================================================
         try {
             val closeUrl = "https://closeload.top/embed/$tmdbId"
             if (loadExtractor(closeUrl, "https://closeload.top/", subtitleCallback, callback)) {
                 loadedAny = true
             }
         } catch (e: Exception) {
-            // Suppress CloseLoad exception
+            // CloseLoad error suppressed
         }
 
         return loadedAny
@@ -356,7 +434,19 @@ class FlixVisionProvider : MainAPI() {
         @JsonProperty("runtime") val runtime: Int? = null,
         @JsonProperty("number_of_seasons") val numberOfSeasons: Int? = null,
         @JsonProperty("number_of_episodes") val numberOfEpisodes: Int? = null,
-        @JsonProperty("genres") val genres: List<TmdbGenre>? = null
+        @JsonProperty("genres") val genres: List<TmdbGenre>? = null,
+        @JsonProperty("credits") val credits: TmdbCredits? = null
+    )
+
+    data class TmdbCredits(
+        @JsonProperty("cast") val cast: List<TmdbCastMember>? = null
+    )
+
+    data class TmdbCastMember(
+        @JsonProperty("id") val id: Int? = null,
+        @JsonProperty("name") val name: String? = null,
+        @JsonProperty("character") val character: String? = null,
+        @JsonProperty("profile_path") val profilePath: String? = null
     )
 
     data class TmdbGenre(
