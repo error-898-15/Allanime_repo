@@ -73,10 +73,6 @@ jobs:
                   'name': 'ZLive',
                   'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
               },
-              'AnimeDekhoPlugin': {
-                  'name': 'AnimeDekho',
-                  'iconUrl': 'https://animedekho.app/wp-content/uploads/2023/02/cropped-favicon-270x270.png'
-              },
               'AnimeSaltPlugin': {
                   'name': 'AnimeSalt',
                   'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
@@ -84,18 +80,6 @@ jobs:
               'RareAnimesPlugin': {
                   'name': 'RareAnimes',
                   'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
-              },
-              'MLWBDPlugin': {
-                  'name': 'MLWBD',
-                  'iconUrl': 'https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png'
-              },
-              'CineVoodPlugin': {
-                  'name': 'CineVood',
-                  'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
-              },
-              'FlixVisionPlugin': {
-                  'name': 'Flix Vision',
-                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png'
               }
           }
           cs3_hashes = {}
