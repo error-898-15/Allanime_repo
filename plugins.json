@@ -42,29 +42,6 @@
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
   {
-    "name": "AnimeDekho",
-    "internalName": "AnimeDekhoPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "AnimeDekho - Watch Hindi & Multi-Audio Anime & Movies with original high speed servers",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "Movie"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AnimeDekhoPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://animedekho.app/wp-content/uploads/2023/02/cropped-favicon-270x270.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
     "name": "AnimeSalt",
     "internalName": "AnimeSaltPlugin",
     "version": 1,
@@ -86,27 +63,6 @@
     "fileHash": "",
     "fileSize": 0,
     "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "MLWBD",
-    "internalName": "MLWBDPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "MLWBD - Watch & Download Hollywood, Bollywood, South & Dual Audio Hindi Dubbed Movies from fojik.site with original HubCloud, GDFlix & FastCloud servers",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "bn",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/MLWBDPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://mlwbd.click/wp-content/uploads/2023/09/cropped-mlwbd-icon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
   {
@@ -133,49 +89,4 @@
     "iconUrl": "https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
-  {
-    "name": "CineVood",
-    "internalName": "CineVoodPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "CineVood - Watch & Download Bollywood, Hollywood, South Hindi Dubbed Movies & Web Series with Original High-Speed Servers",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "AsianDrama"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/CineVoodPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "Flix Vision",
-    "internalName": "FlixVisionPlugin",
-    "version": 2,
-    "apiVersion": 1,
-    "description": "Flix Vision v3.8.0 - Official Multi-Server Direct Streams (FVStream 1-5, Smashy, MultiEmbed, Vidsrc) with Multi-Language Hindi, Tamil, Telugu, Malayalam & Asian Dramas support",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "AsianDrama",
-      "Anime"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/FlixVisionPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  }
 ]
