@@ -64,38 +64,36 @@ jobs:
         run: |
           cat << 'PYEOF' > /tmp/update_plugins.py
           import json, glob, zipfile, os, hashlib
-
           PLUGIN_META = {
-        'BlakitePlugin': {
-            'name': 'Blakite Anime',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/BlakitePlugin.png'
-        },
-        'ZLivePlugin': {
-            'name': 'Z-Live',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/ZLivePlugin.png'
-        },
-        'AnimeSaltPlugin': {
-            'name': 'Anime Salt',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/AnimeSaltPlugin.png'
-        },
-        'RareAnimesPlugin': {
-            'name': 'RareAnimes',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/RareAnimesPlugin.png'
-        },
-        'NetMirrorTVPlugin': {
-            'name': 'NetMirrorTV',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/NetMirrorTVPlugin.png'
-        },
-        'FlixVisionPlugin': {
-            'name': 'FlixVision',
-            'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/icons/FlixVisionPlugin.png'
-        },
-        'CinevoodPlugin': {
-            'name': 'CineVood',
-            'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
-        }
-    }
-
+              'BlakitePlugin': {
+                  'name': 'Blakite Anime',
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+              },
+              'ZLivePlugin': {
+                  'name': 'ZLive',
+                  'iconUrl': 'https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2'
+              },
+              'AnimeSaltPlugin': {
+                  'name': 'AnimeSalt',
+                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
+              },
+              'RareAnimesPlugin': {
+                  'name': 'RareAnimes',
+                  'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
+              },
+              'NetMirrorTVPlugin': {
+                  'name': 'NetMirror TV',
+                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png'
+              },
+              'FlixVisionPlugin': {
+                  'name': 'FlixVision',
+                  'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png'
+              },
+              'CinevoodPlugin': {
+                  'name': 'CineVood',
+                  'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
+              }
+          }
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               base = os.path.basename(cs3_file)
@@ -113,7 +111,6 @@ jobs:
                       with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                           for name, data in items.items():
                               zout.writestr(name, data)
-
                   with open(cs3_file, 'rb') as f:
                       content = f.read()
                   h = 'sha256-' + hashlib.sha256(content).hexdigest()
@@ -121,7 +118,6 @@ jobs:
                   cs3_hashes[base] = (h, sz)
               except Exception as e:
                   print('Warning on cs3:', e)
-
           for pjson in ['build/plugins.json', 'plugins.json']:
               if os.path.exists(pjson):
                   try:
