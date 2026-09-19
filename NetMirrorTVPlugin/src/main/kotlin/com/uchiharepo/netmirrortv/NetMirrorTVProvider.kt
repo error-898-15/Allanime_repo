@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -154,14 +155,13 @@ class NetMirrorTVProvider : MainAPI() {
                             val epNum = epItem.episode ?: 1
                             val epId = epItem.id ?: return@forEach
                             episodesList.add(
-                                Episode(
-                                    data = "$activeDomain/newtv/player.php?id=$epId&ott=$ott",
-                                    name = epItem.title ?: "Episode $epNum",
-                                    season = seasonNum,
-                                    episode = epNum,
-                                    posterUrl = epItem.thumb?.let { fixUrl(it, activeDomain) },
-                                    description = epItem.desc
-                                )
+                                newEpisode("$activeDomain/newtv/player.php?id=$epId&ott=$ott") {
+                                    this.name = epItem.title ?: "Episode $epNum"
+                                    this.season = seasonNum
+                                    this.episode = epNum
+                                    this.posterUrl = epItem.thumb?.let { fixUrl(it, activeDomain) }
+                                    this.description = epItem.desc
+                                }
                             )
                         }
 
@@ -227,21 +227,40 @@ class NetMirrorTVProvider : MainAPI() {
             if (linkUrl.isNotBlank()) {
                 val fullUrl = fixUrl(linkUrl, mainUrl)
                 if (fullUrl.contains(".m3u8")) {
-                    M3u8Helper.generateM3u8(
-                        source = this.name,
-                        streamUrl = fullUrl,
-                        referer = defaultReferer,
-                        headers = mapOf(
-                            "User-Agent" to userAgentString,
-                            "Referer" to defaultReferer
-                        ),
-                        name = "$name (HLS)"
-                    ).forEach { link ->
-                        callback(link)
+                    try {
+                        M3u8Helper.generateM3u8(
+                            source = this.name,
+                            streamUrl = fullUrl,
+                            referer = defaultReferer,
+                            quality = Qualities.Unknown.value,
+                            headers = mapOf(
+                                "User-Agent" to userAgentString,
+                                "Referer" to defaultReferer
+                            ),
+                            name = "$name (HLS)"
+                        ).forEach { link ->
+                            callback.invoke(link)
+                            foundLinks = true
+                        }
+                    } catch (e: Exception) {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = "$name (HLS)",
+                                url = fullUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.referer = defaultReferer
+                                this.headers = mapOf(
+                                    "User-Agent" to userAgentString,
+                                    "Referer" to defaultReferer
+                                )
+                            }
+                        )
                         foundLinks = true
                     }
                 } else {
-                    callback(
+                    callback.invoke(
                         newExtractorLink(
                             source = this.name,
                             name = name,
