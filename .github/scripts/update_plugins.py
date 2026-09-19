@@ -5,10 +5,6 @@ import os
 import hashlib
 
 PLUGIN_META = {
-    'AniflixPlugin': {
-        'name': 'Aniflix',
-        'iconUrl': 'https://aniflix.uno/android/launchericon-192x192.png'
-    },
     'BlakitePlugin': {
         'name': 'Blakite Anime',
         'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
@@ -21,13 +17,13 @@ PLUGIN_META = {
         'name': 'AnimeSalt',
         'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
     },
-    'RareAnimesPlugin': {
-        'name': 'RareAnimes',
-        'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
-    },
     'NetMirrorTVPlugin': {
         'name': 'NetMirror TV',
         'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png'
+    },
+    'RareAnimesPlugin': {
+        'name': 'RareAnimes',
+        'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
     },
     'FlixVisionPlugin': {
         'name': 'FlixVision',
@@ -36,7 +32,6 @@ PLUGIN_META = {
 }
 
 cs3_hashes = {}
-
 for cs3_file in glob.glob('**/*.cs3', recursive=True):
     base = os.path.basename(cs3_file)
     try:
@@ -53,14 +48,17 @@ for cs3_file in glob.glob('**/*.cs3', recursive=True):
             with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                 for name, data in items.items():
                     zout.writestr(name, data)
+    except Exception as e:
+        print(f"Warning processing {cs3_file}: {e}")
 
+    try:
         with open(cs3_file, 'rb') as f:
             content = f.read()
         h = 'sha256-' + hashlib.sha256(content).hexdigest()
         sz = len(content)
         cs3_hashes[base] = (h, sz)
     except Exception as e:
-        print(f"Warning processing {cs3_file}: {e}")
+        print(f"Warning hashing {cs3_file}: {e}")
 
 for pjson in ['build/plugins.json', 'plugins.json']:
     if os.path.exists(pjson):
