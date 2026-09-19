@@ -1,27 +1,5 @@
 [
   {
-    "name": "Aniflix",
-    "internalName": "AniflixPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "Aniflix - Watch Anime Online Free with Multi-Server HLS & Dub Streams (Anixo, MegaVid, DesiDub, Filemoon, VidNest)",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Cartoon"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AniflixPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://aniflix.uno/android/launchericon-192x192.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
     "name": "Blakite Anime",
     "internalName": "BlakitePlugin",
     "version": 1,
