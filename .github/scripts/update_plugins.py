@@ -17,13 +17,13 @@ PLUGIN_META = {
         'name': 'AnimeSalt',
         'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
     },
-    'NetMirrorTVPlugin': {
-        'name': 'NetMirror TV',
-        'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png'
-    },
     'RareAnimesPlugin': {
         'name': 'RareAnimes',
         'iconUrl': 'https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png'
+    },
+    'NetMirrorTVPlugin': {
+        'name': 'NetMirror TV',
+        'iconUrl': 'https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png'
     },
     'FlixVisionPlugin': {
         'name': 'FlixVision',
@@ -32,10 +32,15 @@ PLUGIN_META = {
     'CinevoodPlugin': {
         'name': 'CineVood',
         'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
+    },
+    'GogoanimePlugin': {
+        'name': 'Gogoanime',
+        'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
     }
 }
 
 cs3_hashes = {}
+
 for cs3_file in glob.glob('**/*.cs3', recursive=True):
     base = os.path.basename(cs3_file)
     try:
