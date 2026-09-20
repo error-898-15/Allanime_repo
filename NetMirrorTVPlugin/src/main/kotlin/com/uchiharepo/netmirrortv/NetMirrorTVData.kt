@@ -23,10 +23,6 @@ data class NewTvPlayerResponse(
     @JsonProperty("title") val title: String? = null
 )
 
-data class PlayResponse(
-    @JsonProperty("h") val h: String? = null
-)
-
 data class NewTvSeason(
     @JsonProperty("s") val s: String? = null,
     @JsonProperty("id") val id: String? = null,
@@ -71,4 +67,36 @@ data class NetMirrorTrack(
     @JsonProperty("file") val file: String? = null,
     @JsonProperty("label") val label: String? = null,
     @JsonProperty("kind") val kind: String? = null
+)
+
+data class PlayResponse(
+    @JsonProperty("h") val h: String? = null
+)
+
+data class Net27Response(
+    @JsonProperty("ok") val ok: Boolean? = null,
+    @JsonProperty("streams") val streams: List<Net27Stream>? = null,
+    @JsonProperty("captions") val captions: List<Net27Caption>? = null,
+    @JsonProperty("mp4") val mp4: String? = null,
+    @JsonProperty("resolution") val resolution: String? = null,
+    @JsonProperty("noSource") val noSource: Boolean? = null,
+    @JsonProperty("error") val error: String? = null
+)
+
+data class Net27Stream(
+    @JsonProperty("url") val url: String,
+    @JsonProperty("resolution") val resolution: Int
+)
+
+data class Net27Caption(
+    @JsonProperty("name") val name: String,
+    @JsonProperty("url") val url: String
+)
+
+data class LoadData(
+    @JsonProperty("id") val id: String,
+    @JsonProperty("title") val title: String = "",
+    @JsonProperty("tmdbId") val tmdbId: String? = null,
+    @JsonProperty("season") val season: Int? = null,
+    @JsonProperty("episode") val episode: Int? = null
 )
