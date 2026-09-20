@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "NetMirror TV - Stream Netflix, Prime Video, and Hotstar Movies & TV Shows with Original Direct CDN"
