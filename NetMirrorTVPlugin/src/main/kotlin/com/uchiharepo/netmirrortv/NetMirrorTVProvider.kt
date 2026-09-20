@@ -31,8 +31,7 @@ class NetMirrorTVProvider : MainAPI() {
         "Accept" to "*/*",
         "Accept-Language" to "en-US,en;q=0.9",
         "Referer" to "$mainUrl/",
-        "Origin" to mainUrl,
-        "Cookie" to "hd=on"
+        "Origin" to mainUrl
     )
 
     private val newTvBaseHeaders = mapOf(
@@ -300,120 +299,172 @@ class NetMirrorTVProvider : MainAPI() {
             else -> data.trim().trim('/')
         }
 
-        val apiBase = getApiBaseUrl()
-        val playerUrl = "$apiBase/newtv/player.php?id=$episodeId"
-        val res = try {
-            app.get(playerUrl, headers = newTvBaseHeaders, timeout = 8)
-        } catch (_: Throwable) {
-            null
-        } ?: return false
+        var foundAny = false
 
-        val playerData = tryParseJson<NewTvPlayerResponse>(res.text) ?: return false
-        val videoLink = playerData.videoLink ?: return false
+        // 1. Primary Source: NewTV Player API (Master Multi-Audio HLS Stream)
+        try {
+            val apiBase = getApiBaseUrl()
+            val playerUrl = "$apiBase/newtv/player.php?id=$episodeId"
+            val res = app.get(playerUrl, headers = newTvBaseHeaders, timeout = 8)
+            val playerData = tryParseJson<NewTvPlayerResponse>(res.text)
+            val videoLink = playerData?.videoLink
 
-        // Fetch Master M3U8 Playlist
-        val m3u8Content = try {
-            app.get(
-                videoLink,
-                headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer" to "$mainUrl/"
-                ),
-                timeout = 6
-            ).text
-        } catch (_: Throwable) {
-            ""
-        }
-
-        // 1. Native Subtitle Extraction (Direct WebVTT)
-        if (m3u8Content.isNotBlank()) {
-            val subPattern = Pattern.compile("""#EXT-X-MEDIA:TYPE=SUBTITLES.*?NAME="([^"]+)".*?URI="([^"]+)"""", Pattern.CASE_INSENSITIVE)
-            val subMatcher = subPattern.matcher(m3u8Content)
-            while (subMatcher.find()) {
-                val subName = subMatcher.group(1) ?: continue
-                val rawSubUri = subMatcher.group(2) ?: continue
-                val directVttUri = if (rawSubUri.endsWith(".m3u8")) {
-                    rawSubUri.substringBeforeLast(".m3u8") + ".vtt"
-                } else {
-                    rawSubUri
-                }
-                subtitleCallback(SubtitleFile(subName, directVttUri))
-            }
-
-            // 2. Extract Individual Resolution Streams (1080p, 720p, 480p)
-            val streamPattern = Pattern.compile("""#EXT-X-STREAM-INF:([^\n]+)\n([^\n]+)""")
-            val streamMatcher = streamPattern.matcher(m3u8Content)
-            var streamCount = 0
-
-            while (streamMatcher.find()) {
-                val meta = streamMatcher.group(1) ?: ""
-                val streamUrl = streamMatcher.group(2)?.trim() ?: continue
-
-                val resMatch = Regex("""RESOLUTION=(\d+x\d+)""").find(meta)
-                val resolution = resMatch?.groupValues?.getOrNull(1) ?: "HD"
-
-                val qValue = when {
-                    resolution.contains("1080") -> Qualities.P1080.value
-                    resolution.contains("720") -> Qualities.P720.value
-                    resolution.contains("480") -> Qualities.P480.value
-                    else -> Qualities.P720.value
-                }
-
+            if (!videoLink.isNullOrBlank()) {
                 callback(
                     newExtractorLink(
                         source = name,
-                        name = "$name [Server 1 - $resolution]",
-                        url = streamUrl,
+                        name = "$name [Server 1 - Auto Multi-Audio]",
+                        url = videoLink,
                         type = ExtractorLinkType.M3U8
                     ) {
-                        this.quality = qValue
-                        this.referer = "$mainUrl/"
-                        this.headers = mapOf(
-                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                            "Referer" to "$mainUrl/",
-                            "Origin" to mainUrl
-                        )
+                        this.quality = Qualities.P1080.value
+                        this.referer = "https://net52.cc"
                     }
                 )
-                streamCount++
-            }
+                foundAny = true
 
-            if (streamCount > 0) return true
+                // Extract and safely encode WebVTT Subtitles
+                try {
+                    val m3u8Res = app.get(
+                        videoLink,
+                        headers = mapOf("Referer" to "https://net52.cc"),
+                        timeout = 5
+                    )
+                    val subPattern = Pattern.compile("""#EXT-X-MEDIA:TYPE=SUBTITLES.*?NAME="([^"]+)".*?URI="([^"]+)"""", Pattern.CASE_INSENSITIVE)
+                    val subMatcher = subPattern.matcher(m3u8Res.text)
+                    while (subMatcher.find()) {
+                        val subName = subMatcher.group(1) ?: continue
+                        var subUri = subMatcher.group(2) ?: continue
+                        if (subUri.endsWith(".m3u8")) {
+                            subUri = subUri.substringBeforeLast(".m3u8") + ".vtt"
+                        }
+                        val safeSubUri = subUri.replace("[", "%5B").replace("]", "%5D")
+                        subtitleCallback(SubtitleFile(subName, safeSubUri))
+                    }
+                } catch (_: Throwable) {
+                }
+            }
+        } catch (_: Throwable) {
         }
 
-        // Fallback Master Link
-        callback(
-            newExtractorLink(
-                source = name,
-                name = "$name [Server 1 - Auto HD]",
-                url = videoLink,
-                type = ExtractorLinkType.M3U8
-            ) {
-                this.quality = Qualities.P1080.value
-                this.referer = "$mainUrl/"
-                this.headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Referer" to "$mainUrl/",
-                    "Origin" to mainUrl
-                )
-            }
-        )
+        // 2. Secondary Source: Native Net77 Play & Playlist Flow (Direct HD + SRT Subtitles)
+        try {
+            val playRes = app.post(
+                "https://net77.cc/play.php",
+                data = mapOf("id" to episodeId),
+                headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Referer" to "https://net77.cc/home",
+                    "Origin" to "https://net77.cc"
+                ),
+                timeout = 8
+            )
+            val playData = tryParseJson<PlayResponse>(playRes.text)
+            val hToken = playData?.h
 
-        return true
+            if (!hToken.isNullOrBlank()) {
+                val tm = (System.currentTimeMillis() / 1000).toString()
+                val playlistUrl = "https://net52.cc/playlist.php?id=$episodeId&tm=$tm&h=${URLEncoder.encode(hToken, "UTF-8")}"
+                val plRes = app.get(
+                    playlistUrl,
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Referer" to "https://net77.cc/home",
+                        "Origin" to "https://net77.cc",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    ),
+                    timeout = 8
+                )
+
+                val playlistText = plRes.text.trim()
+                val playlists: List<NetMirrorPlayList>? = if (playlistText.startsWith("[")) {
+                    tryParseJson<List<NetMirrorPlayList>>(playlistText)
+                } else {
+                    tryParseJson<NetMirrorPlayList>(playlistText)?.let { listOf(it) }
+                }
+
+                playlists?.forEach { playlist ->
+                    // Register direct SRT subtitles
+                    playlist.tracks?.forEach { track ->
+                        val subFile = track.file ?: return@forEach
+                        val subUrl = when {
+                            subFile.startsWith("//") -> "https:$subFile"
+                            subFile.startsWith("http") -> subFile
+                            else -> "https://subscdn.top$subFile"
+                        }
+                        val label = track.label ?: "English"
+                        subtitleCallback(SubtitleFile(label, subUrl))
+                    }
+
+                    // Register video streams (Full HD, Mid HD, Low HD)
+                    playlist.sources?.forEach { source ->
+                        val rawFile = source.file ?: return@forEach
+                        val streamUrl = if (rawFile.startsWith("http")) {
+                            rawFile
+                        } else {
+                            "https://net77.cc$rawFile"
+                        }
+
+                        val label = source.label ?: "HD"
+                        val qualityVal = when {
+                            label.contains("Full", ignoreCase = true) || label.contains("1080") -> Qualities.P1080.value
+                            label.contains("Mid", ignoreCase = true) || label.contains("720") -> Qualities.P720.value
+                            label.contains("Low", ignoreCase = true) || label.contains("480") -> Qualities.P480.value
+                            else -> Qualities.P720.value
+                        }
+
+                        callback(
+                            newExtractorLink(
+                                source = name,
+                                name = "$name [Server 2 - $label]",
+                                url = streamUrl,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.quality = qualityVal
+                                this.referer = "https://net52.cc"
+                            }
+                        )
+                        foundAny = true
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
+        return foundAny
     }
 
     override fun getVideoInterceptor(extractorLink: ExtractorLink): Interceptor {
         return object : Interceptor {
             override fun intercept(chain: Interceptor.Chain): Response {
                 val original = chain.request()
+                val url = original.url
+
+                // 1. Critical Domain Rewrite: nm-cdn fails DNS lookup, rewrite host to working freecdn host
+                val newUrl = if (url.host.contains("nm-cdn")) {
+                    val fixedHost = url.host.replace("nm-cdn", "freecdn")
+                    url.newBuilder().host(fixedHost).build()
+                } else {
+                    url
+                }
+
+                // 2. NetMirror CDN requires Referer: https://net52.cc on all segment and media requests
+                val referer = when {
+                    url.host.contains("freecdn") || url.host.contains("nm-cdn") ||
+                    url.host.contains("imgcdn") || url.host.contains("subscdn") -> "https://net52.cc"
+                    !extractorLink.referer.isNullOrBlank() -> extractorLink.referer!!
+                    else -> "https://net52.cc"
+                }
+
                 val newRequest = original.newBuilder()
+                    .url(newUrl)
                     .removeHeader("User-Agent")
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
                     .removeHeader("Referer")
-                    .header("Referer", "$mainUrl/")
-                    .removeHeader("Origin")
-                    .header("Origin", mainUrl)
+                    .header("Referer", referer)
                     .build()
+
                 return chain.proceed(newRequest)
             }
         }
