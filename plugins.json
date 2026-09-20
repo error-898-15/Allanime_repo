@@ -177,5 +177,25 @@
     "fileSize": 0,
     "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "EffedUpMovies",
+    "internalName": "EffedUpMoviesPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "EffedUpMovies - Watch controversial, cult, horror, and underground cinema with original high-speed HLS servers",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Movie"
+    ],
+    "language": "en",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/EffedUpMoviesPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://www.effedupmovies.com/wp-content/uploads/2025/09/cropped-favicon-270x270.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
-]
+    ]
