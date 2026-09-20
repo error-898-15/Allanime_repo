@@ -197,28 +197,5 @@
     "fileSize": 0,
     "iconUrl": "https://www.effedupmovies.com/wp-content/uploads/2025/09/cropped-favicon-270x270.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "Joya9",
-    "internalName": "Joya9Plugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "Joya9 - Watch & Download Bangla, Hindi & Multi-Audio Movies, Series & Cartoons with Verified Direct Streams",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "AsianDrama",
-      "Anime"
-    ],
-    "language": "bn",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/Joya9Plugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://joya9tv1.com/wp-content/uploads/2024/02/cropped-JAYA9-APK-512x512-1.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
