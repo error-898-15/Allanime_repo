@@ -10,6 +10,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -32,85 +33,77 @@ class CinevoodProvider : MainAPI() {
     private val cfKiller = CloudflareKiller()
 
     companion object {
-        val MIRRORS = listOf(
-            "https://cinevood.net",
-            "https://cinevood.rocks",
-            "https://cinevood.vip",
-            "https://cinevood.cv",
-            "https://cinevood.site",
-            "https://cinevood.cc",
-            "https://1cinevood.com"
+        private const val FAST_TIMEOUT = 10L
+        private const val BACKUP_URL = "https://cinevood.rocks"
+
+        val DEFAULT_HEADERS = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Referer" to "https://cinevood.net/",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language" to "en-US,en;q=0.9,hi;q=0.8"
         )
     }
 
     private suspend fun getDoc(url: String): Document {
-        // Collect candidate URLs: primary requested URL plus its mirror counterparts
-        val candidates = mutableListOf(url)
-        val path = if (url.startsWith("http")) {
-            url.substringAfter("://").substringAfter("/", "")
-        } else {
-            url.removePrefix("/")
-        }
-
-        for (mirror in MIRRORS) {
-            val candidate = if (path.isNotBlank()) "$mirror/$path" else mirror
-            if (!candidates.contains(candidate)) {
-                candidates.add(candidate)
+        // Step 1: Direct fast fetch with proper browser headers (takes ~200ms without Cloudflare WebView)
+        try {
+            val res = app.get(url, headers = DEFAULT_HEADERS, timeout = FAST_TIMEOUT)
+            val doc = res.document
+            val title = doc.title().trim()
+            if (title.isNotBlank() && !title.contains("Just a moment", ignoreCase = true) && !title.contains("Attention Required", ignoreCase = true)) {
+                val hasArticles = doc.select("article, div.entry-content, div.thecontent, div.post-single-content, h1.title, h1").isNotEmpty()
+                if (hasArticles) return doc
             }
-        }
-
-        for (targetUrl in candidates) {
-            try {
-                // Natural CloudflareKiller request without mobile/desktop user-agent mismatch
-                val res = app.get(targetUrl, interceptor = cfKiller, timeout = 15)
-                val doc = res.document
-                val title = doc.title().trim()
-                if (title.isNotBlank() && !title.contains("Just a moment", ignoreCase = true) && !title.contains("Attention Required", ignoreCase = true)) {
-                    val hasContent = doc.select("article, div.entry-content, div.thecontent, div.post-single-content, h1, a[href]").isNotEmpty()
-                    if (hasContent) return doc
-                }
-            } catch (e: Exception) {
-                // Try next mirror
-            }
-
-            try {
-                val res = app.get(
-                    targetUrl,
-                    headers = mapOf(
-                        "Referer" to "$mainUrl/",
-                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                    ),
-                    interceptor = cfKiller,
-                    timeout = 15
-                )
-                val doc = res.document
-                val title = doc.title().trim()
-                if (title.isNotBlank() && !title.contains("Just a moment", ignoreCase = true)) {
-                    return doc
-                }
-            } catch (e: Exception) {
-                // Continue
-            }
-        }
-
-        return try {
-            app.get(url, interceptor = cfKiller).document
         } catch (e: Exception) {
-            Document(url)
+            // Proceed to backup or cfKiller
         }
+
+        // Step 2: Try backup mirror directly (https://cinevood.rocks)
+        val backupUrl = if (url.startsWith("http")) {
+            url.replace(Regex("""^https?://[^/]+"""), BACKUP_URL)
+        } else {
+            "$BACKUP_URL/${url.removePrefix("/")}"
+        }
+
+        try {
+            val res = app.get(backupUrl, headers = DEFAULT_HEADERS + mapOf("Referer" to "$BACKUP_URL/"), timeout = FAST_TIMEOUT)
+            val doc = res.document
+            val title = doc.title().trim()
+            if (title.isNotBlank() && !title.contains("Just a moment", ignoreCase = true)) {
+                return doc
+            }
+        } catch (e: Exception) {
+            // Proceed to cfKiller
+        }
+
+        // Step 3: If blocked by Cloudflare challenge, invoke cfKiller with strict timeout (max 12s)
+        val cfDoc = withTimeoutOrNull(12000L) {
+            try {
+                val res = app.get(url, headers = DEFAULT_HEADERS, interceptor = cfKiller, timeout = FAST_TIMEOUT)
+                res.document
+            } catch (e: Exception) {
+                try {
+                    val res = app.get(backupUrl, headers = DEFAULT_HEADERS, interceptor = cfKiller, timeout = FAST_TIMEOUT)
+                    res.document
+                } catch (ex: Exception) {
+                    null
+                }
+            }
+        }
+
+        return cfDoc ?: Document(url)
     }
 
     override val mainPage = mainPageOf(
-        "$mainUrl/page/" to "Latest Releases",
-        "$mainUrl/bollywood/page/" to "Bollywood Movies",
-        "$mainUrl/hollywood/page/" to "Hollywood Movies",
-        "$mainUrl/hindi-dubbed/south-dubbed/page/" to "South Hindi Dubbed",
-        "$mainUrl/hindi-dubbed/hollywood-dubbed/page/" to "Hollywood Hindi Dubbed",
-        "$mainUrl/web-series/page/" to "Web Series",
-        "$mainUrl/punjabi/page/" to "Punjabi Movies",
-        "$mainUrl/bengali/page/" to "Bengali Movies",
-        "$mainUrl/tv-shows/page/" to "TV Shows",
-        "$mainUrl/others/page/" to "Others"
+        "$mainUrl/" to "Latest Releases",
+        "$mainUrl/bollywood/" to "Bollywood Movies",
+        "$mainUrl/hollywood/" to "Hollywood Movies",
+        "$mainUrl/hindi-dubbed/south-dubbed/" to "South Hindi Dubbed",
+        "$mainUrl/hindi-dubbed/hollywood-dubbed/" to "Hollywood Dubbed",
+        "$mainUrl/web-series/" to "Web Series",
+        "$mainUrl/punjabi/" to "Punjabi Movies",
+        "$mainUrl/bengali/" to "Bengali Movies",
+        "$mainUrl/tv-shows/" to "TV Shows"
     )
 
     override suspend fun getMainPage(
@@ -120,14 +113,19 @@ class CinevoodProvider : MainAPI() {
         val url = if (page <= 1) {
             request.data
         } else {
-            "${request.data}$page/"
+            val cleanBase = request.data.removeSuffix("/")
+            "$cleanBase/page/$page/"
         }
 
-        val doc = getDoc(url)
-        val home = doc.select("article.latestPost, article").mapNotNull {
-            it.toSearchResult()
+        return try {
+            val doc = getDoc(url)
+            val home = doc.select("article.latestPost, article").mapNotNull {
+                it.toSearchResult()
+            }
+            newHomePageResponse(request.name, home)
+        } catch (e: Exception) {
+            newHomePageResponse(request.name, emptyList())
         }
-        return newHomePageResponse(request.name, home)
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -136,9 +134,13 @@ class CinevoodProvider : MainAPI() {
         val cleanQuery = query.trim().replace(" ", "+")
         val searchUrl = "$mainUrl/?s=$cleanQuery"
 
-        val doc = getDoc(searchUrl)
-        return doc.select("article.latestPost, article").mapNotNull {
-            it.toSearchResult()
+        return try {
+            val doc = getDoc(searchUrl)
+            doc.select("article.latestPost, article").mapNotNull {
+                it.toSearchResult()
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
@@ -309,18 +311,6 @@ class CinevoodProvider : MainAPI() {
             }
         }
 
-        // If directServers is empty, add mirror links so loadLinks will deep-resolve across mirrors
-        if (directServers.isEmpty()) {
-            for (m in MIRRORS) {
-                val mUrl = if (rawUrl.startsWith("http")) {
-                    rawUrl.replace(Regex("""https?://[^/]+"""), m)
-                } else {
-                    "$m/$rawUrl"
-                }
-                directServers.add(CineServer("CineVood Server (${m.substringAfter("://cinevood.")})", mUrl))
-            }
-        }
-
         // TV Series Handling
         if (isSeries && episodeMap.isNotEmpty()) {
             val episodes = episodeMap.map { (epNum, servers) ->
@@ -443,7 +433,7 @@ class CinevoodProvider : MainAPI() {
                     )
                     loadedAny = true
                 } else if (lowerUrl.contains("cinevood")) {
-                    // Fallback: server is an article link -> inspect page across mirrors for download/stream buttons
+                    // Fallback: server is an article link -> inspect page for download/stream buttons
                     val pageDoc = getDoc(serverUrl)
                     val allPageLinks = pageDoc.select("a[href]")
 
@@ -529,7 +519,8 @@ class CinevoodProvider : MainAPI() {
                 app.get(
                     currentUrl,
                     headers = mapOf("Referer" to "$mainUrl/"),
-                    interceptor = cfKiller
+                    interceptor = cfKiller,
+                    timeout = 15
                 ).document
             } catch (e: Exception) {
                 continue
