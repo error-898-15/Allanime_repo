@@ -1,9 +1,7 @@
 name: Build Plugins
-
 concurrency:
   group: "build-${{ github.ref }}"
   cancel-in-progress: true
-
 on:
   push:
     branches:
@@ -20,7 +18,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -64,6 +61,7 @@ jobs:
         run: |
           cat << 'PYEOF' > /tmp/update_plugins.py
           import json, glob, zipfile, os, hashlib
+
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -92,8 +90,13 @@ jobs:
               'CinevoodPlugin': {
                   'name': 'CineVood',
                   'iconUrl': 'https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png'
+              },
+              'GogoanimePlugin': {
+                  'name': 'Gogoanime',
+                  'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
               }
           }
+
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               base = os.path.basename(cs3_file)
@@ -118,6 +121,7 @@ jobs:
                   cs3_hashes[base] = (h, sz)
               except Exception as e:
                   print('Warning on cs3:', e)
+
           for pjson in ['build/plugins.json', 'plugins.json']:
               if os.path.exists(pjson):
                   try:
