@@ -1,4 +1,5 @@
 rootProject.name = "Uchiharepo"
+
 include(":BlakitePlugin")
 include(":ZLivePlugin")
 include(":AnimeSaltPlugin")
@@ -8,3 +9,4 @@ include(":FlixVisionPlugin")
 include(":CinevoodPlugin")
 include(":GogoanimePlugin")
 include(":EffedUpMoviesPlugin")
+include(":Joya9Plugin")
