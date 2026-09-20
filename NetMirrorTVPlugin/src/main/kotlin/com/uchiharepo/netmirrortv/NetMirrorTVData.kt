@@ -23,6 +23,10 @@ data class NewTvPlayerResponse(
     @JsonProperty("title") val title: String? = null
 )
 
+data class PlayResponse(
+    @JsonProperty("h") val h: String? = null
+)
+
 data class NewTvSeason(
     @JsonProperty("s") val s: String? = null,
     @JsonProperty("id") val id: String? = null,
