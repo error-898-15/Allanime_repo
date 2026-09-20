@@ -36,11 +36,14 @@ PLUGIN_META = {
     'GogoanimePlugin': {
         'name': 'Gogoanime',
         'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
+    },
+    'EffedUpMoviesPlugin': {
+        'name': 'EffedUpMovies',
+        'iconUrl': 'https://www.effedupmovies.com/wp-content/uploads/2025/09/cropped-favicon-270x270.png'
     }
 }
 
 cs3_hashes = {}
-
 for cs3_file in glob.glob('**/*.cs3', recursive=True):
     base = os.path.basename(cs3_file)
     try:
