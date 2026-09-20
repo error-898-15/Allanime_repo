@@ -20,7 +20,7 @@ import java.util.Base64
 import java.util.UUID
 
 object NetmirrorThrottler {
-    private const val MIN_INTERVAL_MS = 1200L
+    private const val MIN_INTERVAL_MS = 1000L
     private var lastRequest = 0L
     private val mutex = Mutex()
 
@@ -343,39 +343,9 @@ class NetMirrorTVProvider : MainAPI() {
         val episodeId = loadData.id
         val title = loadData.title
         var foundAny = false
+        val seenStreamUrls = mutableSetOf<String>()
 
-        // 1. Check NewTV API Flow (Primary fast direct HLS)
-        try {
-            NetmirrorThrottler.throttle()
-            val apiBase = getApiBaseUrl()
-            val playerUrl = "$apiBase/newtv/player.php?id=$episodeId"
-            val res = app.get(playerUrl, headers = newTvBaseHeaders, timeout = 7)
-            val playerData = tryParseJson<NewTvPlayerResponse>(res.text)
-
-            // CRITICAL CHECK: Only use if status is "ok"!
-            // When status is "otp", NetMirror returns the honeypot rate-limit video 220884.
-            if (playerData != null && playerData.status == "ok" && !playerData.videoLink.isNullOrBlank()) {
-                val videoLink = playerData.videoLink
-                val refererUrl = playerData.referer ?: apiBase
-
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = "$name [Direct Master HD]",
-                        url = videoLink,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.quality = Qualities.P1080.value
-                        this.referer = refererUrl
-                    }
-                )
-                foundAny = true
-                return true
-            }
-        } catch (_: Throwable) {
-        }
-
-        // 2. Native Web Flow (play.php + playlist.php)
+        // 1. Native Web Flow (play.php + playlist.php -> Verified 100% Working on net77/net52)
         try {
             NetmirrorThrottler.throttle()
             ensureNativeCookies(episodeId)
@@ -427,31 +397,7 @@ class NetMirrorTVProvider : MainAPI() {
                     tryParseJson<NetMirrorPlayList>(plRes)
                 }
 
-                playlist?.sources?.forEach { source ->
-                    val file = source.file ?: return@forEach
-                    val streamUrl = if (file.startsWith("http")) file else "https://net77.cc$file"
-                    val label = source.label ?: "HD"
-                    val quality = when {
-                        label.contains("1080", true) || label.contains("Full", true) -> Qualities.P1080.value
-                        label.contains("720", true) || label.contains("Mid", true) -> Qualities.P720.value
-                        label.contains("480", true) || label.contains("Low", true) -> Qualities.P480.value
-                        else -> Qualities.P720.value
-                    }
-
-                    callback(
-                        newExtractorLink(
-                            source = name,
-                            name = "$name [$label]",
-                            url = streamUrl,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            this.quality = quality
-                            this.referer = "https://net77.cc/home"
-                        }
-                    )
-                    foundAny = true
-                }
-
+                // Process tracks (Subtitles)
                 playlist?.tracks?.forEach { track ->
                     val file = track.file ?: return@forEach
                     if (track.kind.isNullOrBlank() || track.kind.equals("captions", true) || track.kind.equals("subtitles", true)) {
@@ -464,11 +410,133 @@ class NetMirrorTVProvider : MainAPI() {
                         subtitleCallback(SubtitleFile(subLabel, subUrl))
                     }
                 }
+
+                // Process and resolve sources
+                playlist?.sources?.forEach { source ->
+                    val file = source.file ?: return@forEach
+                    val rawStreamUrl = if (file.startsWith("http")) file else "https://net77.cc$file"
+                    val label = source.label ?: "HD"
+
+                    // Pre-fetch the HLS master file to extract direct CDN links and rewrite dead DNS hosts
+                    try {
+                        val hlsRes = app.get(
+                            rawStreamUrl,
+                            headers = mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                "Referer" to "https://net52.cc/",
+                                "Origin" to "https://net52.cc"
+                            )
+                        ).text
+
+                        var foundStreamInHls = false
+                        for (line in hlsRes.split("\n")) {
+                            val trimmed = line.trim()
+                            if (trimmed.startsWith("http") && !trimmed.contains("220884")) {
+                                val fixedStreamUrl = fixCdnHostUrl(trimmed)
+                                if (seenStreamUrls.add(fixedStreamUrl)) {
+                                    val quality = when {
+                                        fixedStreamUrl.contains("1080p") || label.contains("Full", true) -> Qualities.P1080.value
+                                        fixedStreamUrl.contains("720p") || label.contains("Mid", true) -> Qualities.P720.value
+                                        fixedStreamUrl.contains("480p") || label.contains("Low", true) -> Qualities.P480.value
+                                        else -> Qualities.P720.value
+                                    }
+                                    val resLabel = when (quality) {
+                                        Qualities.P1080.value -> "1080p"
+                                        Qualities.P720.value -> "720p"
+                                        Qualities.P480.value -> "480p"
+                                        else -> "HD"
+                                    }
+
+                                    callback(
+                                        newExtractorLink(
+                                            source = name,
+                                            name = "$name [$label - $resLabel]",
+                                            url = fixedStreamUrl,
+                                            type = ExtractorLinkType.M3U8
+                                        ) {
+                                            this.quality = quality
+                                            this.referer = "https://net52.cc/"
+                                        }
+                                    )
+                                    foundAny = true
+                                    foundStreamInHls = true
+                                }
+                            }
+                        }
+
+                        if (!foundStreamInHls && !rawStreamUrl.contains("220884")) {
+                            val fixedUrl = fixCdnHostUrl(rawStreamUrl)
+                            if (seenStreamUrls.add(fixedUrl)) {
+                                callback(
+                                    newExtractorLink(
+                                        source = name,
+                                        name = "$name [$label]",
+                                        url = fixedUrl,
+                                        type = ExtractorLinkType.M3U8
+                                    ) {
+                                        this.quality = Qualities.P720.value
+                                        this.referer = "https://net52.cc/"
+                                    }
+                                )
+                                foundAny = true
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        val fixedUrl = fixCdnHostUrl(rawStreamUrl)
+                        if (seenStreamUrls.add(fixedUrl) && !fixedUrl.contains("220884")) {
+                            callback(
+                                newExtractorLink(
+                                    source = name,
+                                    name = "$name [$label]",
+                                    url = fixedUrl,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    this.quality = Qualities.P720.value
+                                    this.referer = "https://net52.cc/"
+                                }
+                            )
+                            foundAny = true
+                        }
+                    }
+                }
             }
         } catch (_: Throwable) {
         }
 
-        // 3. Fallback TMDB Embed Flow (hakunaymatata CDN)
+        // 2. NewTV API Flow (Only if status is "ok" and not honeypot trap 220884)
+        if (!foundAny) {
+            try {
+                NetmirrorThrottler.throttle()
+                val apiBase = getApiBaseUrl()
+                val playerUrl = "$apiBase/newtv/player.php?id=$episodeId"
+                val res = app.get(playerUrl, headers = newTvBaseHeaders, timeout = 7)
+                val playerData = tryParseJson<NewTvPlayerResponse>(res.text)
+
+                if (playerData != null && playerData.status == "ok" &&
+                    !playerData.videoLink.isNullOrBlank() &&
+                    !playerData.videoLink.contains("220884")
+                ) {
+                    val fixedLink = fixCdnHostUrl(playerData.videoLink)
+                    if (seenStreamUrls.add(fixedLink)) {
+                        callback(
+                            newExtractorLink(
+                                source = name,
+                                name = "$name [Direct Master HD]",
+                                url = fixedLink,
+                                type = ExtractorLinkType.M3U8
+                            ) {
+                                this.quality = Qualities.P1080.value
+                                this.referer = "https://net52.cc/"
+                            }
+                        )
+                        foundAny = true
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+        }
+
+        // 3. Fallback TMDB Embed Flow (hakunaymatata CDN via videodownloader.site)
         if (!foundAny && !loadData.tmdbId.isNullOrBlank()) {
             try {
                 NetmirrorThrottler.throttle()
@@ -537,44 +605,59 @@ class NetMirrorTVProvider : MainAPI() {
                 val originalRequest = chain.request()
                 val url = originalRequest.url
 
-                // 1. Rewrite dead nm-cdn DNS hosts to active freecdn hosts
-                val newUrl = if (url.host.contains("nm-cdn")) {
-                    url.newBuilder().host(url.host.replace("nm-cdn", "freecdn")).build()
+                // Rewrite dead nm-cdn DNS hosts to live freecdn DNS hosts:
+                // nm-cdn.top -> freecdn1.top
+                // nm-cdn2.top -> freecdn2.top
+                // nm-cdn4.top -> freecdn4.top
+                // nm-cdn5.top -> freecdn5.top
+                var host = url.host
+                if (host.contains("nm-cdn")) {
+                    host = Regex("""nm-cdn(\d*)""").replace(host) { m ->
+                        val num = m.groupValues[1]
+                        if (num.isEmpty()) "freecdn1" else "freecdn$num"
+                    }
+                }
+
+                val newUrl = if (host != url.host) {
+                    url.newBuilder().host(host).build()
                 } else {
                     url
                 }
 
-                val host = newUrl.host
-                val isNativeHost = host.contains("net52") ||
-                    host.contains("net77") ||
-                    host.contains("net22") ||
-                    host.contains("net27") ||
-                    host.contains("freecdn")
+                val isCdnHost = host.contains("freecdn") || host.contains("nm-cdn")
+                val isNativeHost = isCdnHost || host.contains("net52") || host.contains("net77") || host.contains("imgcdn")
 
-                // 2. Use link's own referer (crucial: videodownloader.site for net27 vs net77 for native)
-                val referer = extractorLink.referer?.takeIf { it.isNotBlank() } ?: "https://net77.cc/home"
+                val builder = originalRequest.newBuilder().url(newUrl)
 
-                val builder = originalRequest.newBuilder()
-                    .url(newUrl)
-                    .removeHeader("Referer")
-                    .header("Referer", referer)
-
-                // 3. Attach Origin and Cookies for native endpoints
-                if (isNativeHost) {
+                if (isCdnHost) {
+                    // NetMirror FreeCDN strictly requires Referer: https://net52.cc/ to allow playback (returns 404 otherwise)
+                    builder.removeHeader("Referer")
+                    builder.header("Referer", "https://net52.cc/")
                     builder.removeHeader("Origin")
-                    builder.header("Origin", "https://net77.cc")
-
-                    val cookies = mutableMapOf<String, String>()
-                    cookies["hd"] = "on"
-                    if (cookieValue.isNotEmpty()) cookies["t_hash_t"] = cookieValue
-                    cookies.putAll(nativeCookies)
-
-                    builder.removeHeader("Cookie")
-                    builder.header("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+                    builder.header("Origin", "https://net52.cc")
+                    builder.removeHeader("User-Agent")
+                    builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                } else if (isNativeHost) {
+                    val referer = extractorLink.referer?.takeIf { it.isNotBlank() } ?: "https://net52.cc/"
+                    builder.removeHeader("Referer")
+                    builder.header("Referer", referer)
+                    builder.removeHeader("Origin")
+                    builder.header("Origin", "https://net52.cc")
                 }
 
                 return chain.proceed(builder.build())
             }
+        }
+    }
+
+    private fun fixCdnHostUrl(url: String): String {
+        return if (url.contains("nm-cdn")) {
+            Regex("""nm-cdn(\d*)""").replace(url) { m ->
+                val num = m.groupValues[1]
+                if (num.isEmpty()) "freecdn1" else "freecdn$num"
+            }
+        } else {
+            url
         }
     }
 
@@ -583,8 +666,8 @@ class NetMirrorTVProvider : MainAPI() {
             val headers = mapOf(
                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Content-Type" to "application/x-www-form-urlencoded",
-                "Origin" to "https://net77.cc",
-                "Referer" to "https://net77.cc/verify2",
+                "Origin" to "https://net52.cc",
+                "Referer" to "https://net52.cc/verify2",
                 "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
             )
             val formBody = FormBody.Builder()
