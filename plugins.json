@@ -131,7 +131,7 @@
     "fileSize": 0,
     "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  }
+  },
   {
     "name": "CineVood",
     "internalName": "CinevoodPlugin",
@@ -153,6 +153,29 @@
     "fileHash": "",
     "fileSize": 0,
     "iconUrl": "https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "Gogoanime",
+    "internalName": "GogoanimePlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "Gogoanime - Watch HD & Subbed Anime Online with Fast Original Servers (Megavid, MegaPlay & Direct MP4)",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "Movie",
+      "TvSeries"
+    ],
+    "language": "en",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/GogoanimePlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
 ]
