@@ -2,7 +2,6 @@ package com.uchiharepo.joya9
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
 
@@ -10,9 +9,8 @@ class Joya9Provider : MainAPI() {
     override var mainUrl = "https://joya9tv1.com"
     override var name = "Joya9"
     override val hasMainPage = true
-    override val hasQuickSearch = true
-    override val hasDownloadSupport = true
     override var lang = "bn"
+    override val hasQuickSearch = true
     override val supportedTypes = setOf(
         TvType.Movie,
         TvType.TvSeries,
@@ -26,17 +24,15 @@ class Joya9Provider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "$mainUrl/movies/page/" to "Latest Releases",
-        "$mainUrl/genre/bengali-movies/page/" to "Bengali Movies",
-        "$mainUrl/genre/bangla-dubbed/page/" to "Bangla Dubbed",
-        "$mainUrl/genre/bollywood-movies/page/" to "Bollywood Movies",
-        "$mainUrl/genre/hindi-dubbed/page/" to "Hindi Dubbed",
-        "$mainUrl/genre/dual-multi-audio-movies/page/" to "Dual / Multi Audio",
-        "$mainUrl/genre/hollywood-movies/page/" to "Hollywood Movies",
-        "$mainUrl/genre/telugu-movies/page/" to "Telugu Movies",
-        "$mainUrl/genre/tamil-movies/page/" to "Tamil Movies",
-        "$mainUrl/genre/korean-movies-drama/page/" to "Korean Movies & Drama",
-        "$mainUrl/genre/cartoon-movies-series/page/" to "Cartoons & Anime"
+        "$mainUrl/category/bangla-movies/page/" to "Bangla Movies",
+        "$mainUrl/category/bangla-web-series/page/" to "Bangla Series",
+        "$mainUrl/category/hindi-dubbed-movies/page/" to "Hindi Dubbed",
+        "$mainUrl/category/bollywood-movies/page/" to "Bollywood Movies",
+        "$mainUrl/category/south-indian-movies/page/" to "South Indian",
+        "$mainUrl/category/hollywood-movies/page/" to "Hollywood Movies",
+        "$mainUrl/category/foreign-series/page/" to "Foreign Series",
+        "$mainUrl/category/animation-movies/page/" to "Animation",
+        "$mainUrl/page/" to "Latest Updates"
     )
 
     override suspend fun getMainPage(
@@ -54,7 +50,6 @@ class Joya9Provider : MainAPI() {
     private fun extractImageUrl(element: Element?): String? {
         if (element == null) return null
         val img = if (element.tagName() == "img") element else element.selectFirst("img") ?: return null
-
         val raw = (
             img.attr("data-src").ifEmpty {
                 img.attr("data-lazy-src").ifEmpty {
@@ -85,7 +80,7 @@ class Joya9Provider : MainAPI() {
         if (!href.startsWith("http") || href.contains("/genre/") || href.contains("/tag/")) return null
         val posterUrl = extractImageUrl(this)
 
-        val isSeries = title.contains(Regex("""S\d+|Season|Series|Episode|Epi\s*\d+""", RegexOption.IGNORE_CASE))
+        val isSeries = Regex("""S\d+|Season|Series|Episode|Epi\s*\d+""", RegexOption.IGNORE_CASE).containsMatchIn(title)
 
         return if (isSeries) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -160,7 +155,7 @@ class Joya9Provider : MainAPI() {
             }
         }
 
-        val isSeries = foundSpecificEpisode || title.contains(Regex("""S\d+|Season|Series""", RegexOption.IGNORE_CASE))
+        val isSeries = foundSpecificEpisode || Regex("""S\d+|Season|Series""", RegexOption.IGNORE_CASE).containsMatchIn(title)
 
         return if (isSeries && episodes.isNotEmpty()) {
             val sortedEpisodes = episodes.distinctBy { it.data }.sortedBy { it.episode ?: 1 }
@@ -257,8 +252,8 @@ class Joya9Provider : MainAPI() {
                             val cleanTurbo = turboLink.replace("&amp;", "&")
                             callback.invoke(
                                 newExtractorLink(
-                                    source = name,
-                                    name = "$name - Turbo R2 Cloud" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
+                                    source = this.name,
+                                    name = "${this.name} - Turbo R2 Cloud" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
                                     url = cleanTurbo,
                                     type = ExtractorLinkType.VIDEO
                                 ) {
@@ -286,8 +281,8 @@ class Joya9Provider : MainAPI() {
                                 if (!streamSrc.isNullOrBlank()) {
                                     callback.invoke(
                                         newExtractorLink(
-                                            source = name,
-                                            name = "$name - MultiCloud Stream" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
+                                            source = this.name,
+                                            name = "${this.name} - MultiCloud Stream" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
                                             url = streamSrc,
                                             type = ExtractorLinkType.VIDEO
                                         ) {
@@ -334,8 +329,8 @@ class Joya9Provider : MainAPI() {
                                         val streamUrl = "https://pixeldrain.com/api/filesystem/$pxId"
                                         callback.invoke(
                                             newExtractorLink(
-                                                source = name,
-                                                name = "$name - PixelDrain Direct" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
+                                                source = this.name,
+                                                name = "${this.name} - PixelDrain Direct" + (if (!qualityLabel.isNullOrBlank()) " [$qualityLabel]" else ""),
                                                 url = streamUrl,
                                                 type = ExtractorLinkType.VIDEO
                                             ) {
