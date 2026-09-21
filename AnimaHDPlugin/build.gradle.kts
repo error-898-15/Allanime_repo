@@ -1,8 +1,8 @@
 version = 1
 
 cloudstream {
-    description = "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive"
-    authors = listOf("error-898-15")
+    description = "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive (made by Jihad)"
+    authors = listOf("error-898-15", "Jihad")
     status = 1
     tvTypes = listOf("Anime", "AnimeMovie", "Cartoon", "Movie", "TvSeries")
     language = "hi"
