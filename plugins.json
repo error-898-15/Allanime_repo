@@ -226,9 +226,10 @@
     "internalName": "AnimaHDPlugin",
     "version": 1,
     "apiVersion": 1,
-    "description": "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive",
+    "description": "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive (made by Jihad)",
     "authors": [
-      "error-898-15"
+      "error-898-15",
+      "Jihad"
     ],
     "tvTypes": [
       "Anime",
