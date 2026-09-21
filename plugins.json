@@ -22,26 +22,6 @@
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
   {
-    "name": "ZLive",
-    "internalName": "ZLivePlugin",
-    "version": 2,
-    "apiVersion": 1,
-    "description": "ZLive - Watch Live Sports, Events & Worldwide TV Channels Free",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Live"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/ZLivePlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://ui-avatars.com/api/?name=ZLive&background=0d0d0d&color=8288fe&size=512&bold=true&length=2",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
     "name": "AnimeSalt",
     "internalName": "AnimeSaltPlugin",
     "version": 1,
@@ -66,96 +46,6 @@
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   },
   {
-    "name": "RareAnimes",
-    "internalName": "RareAnimesPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "RareAnimes - Watch Hindi, Tamil, Telugu Dubbed Anime, Cartoons & Movies with StreamBeta, Mega & MultiQuality CDN",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/RareAnimesPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://www.rareanimes.mov/wp-content/uploads/2023/11/cropped-Rare-Animes-India-192x192.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "NetMirror TV",
-    "internalName": "NetMirrorTVPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "NetMirror TV - Stream Netflix, Prime Video, and Hotstar Movies & TV Shows with Original Direct CDN",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/NetMirrorTVPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/NetMirrorTVPlugin/icon.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "FlixVision",
-    "internalName": "FlixVisionPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "FlixVision - Movies, TV Series & Multi-Server Direct Streams (FVSTREAM, VidSrc, SmashyStream, AutoEmbed)",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/FlixVisionPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/main/FlixVisionPlugin/icon.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "CineVood",
-    "internalName": "CinevoodPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "CineVood - Watch & Download Latest Bollywood, Hollywood & South Hindi Dubbed Movies & Web Series with Direct Fast & Multi-Server CDN",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AsianDrama"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/CinevoodPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://cinevood.rocks/wp-content/uploads/2020/07/favicon2.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
     "name": "Gogoanime",
     "internalName": "GogoanimePlugin",
     "version": 1,
@@ -176,74 +66,6 @@
     "fileHash": "",
     "fileSize": 0,
     "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "EffedUpMovies",
-    "internalName": "EffedUpMoviesPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "EffedUpMovies - Watch controversial, cult, horror, and underground cinema with original high-speed HLS servers",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie"
-    ],
-    "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/EffedUpMoviesPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://www.effedupmovies.com/wp-content/uploads/2025/09/cropped-favicon-270x270.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "MovieNestBD",
-    "internalName": "MovieNestPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "MovieNestBD - Watch Movies, TV Series, Anime & Bengali Content Online with High-Speed HLS Streaming",
-    "authors": [
-      "error-898-15"
-    ],
-    "tvTypes": [
-      "Movie",
-      "TvSeries",
-      "Anime",
-      "AsianDrama"
-    ],
-    "language": "bn",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/MovieNestPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://movienestbd.best/favicon.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
-  },
-  {
-    "name": "AnimaHD",
-    "internalName": "AnimaHDPlugin",
-    "version": 1,
-    "apiVersion": 1,
-    "description": "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive (made by Jihad)",
-    "authors": [
-      "error-898-15",
-      "Jihad"
-    ],
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Cartoon",
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AnimaHDPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://animahd.com/wp-content/uploads/2026/06/e58b0fa5-1c81-4021-8a95-5c826587ba9b.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
