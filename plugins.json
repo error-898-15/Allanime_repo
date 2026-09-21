@@ -1,71 +1,78 @@
 [
   {
-    "name": "Blakite Anime",
-    "internalName": "BlakitePlugin",
+    "name": "Just4Anime",
+    "internalName": "Just4AnimePlugin",
     "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/Just4AnimePlugin.cs3",
     "apiVersion": 1,
-    "description": "Blakite Anime - Watch Hindi & English Dubbed/Subbed Anime Online Free with multi-quality Rumble Cloud HLS streaming",
+    "description": "Just4Anime - Watch Anime Online with Multi-Server High-Speed CDN & Sub/Dub",
     "authors": [
       "error-898-15"
     ],
+    "status": 1,
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Cartoon"
+      "OVA"
     ],
-    "language": "hi",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+    "language": "en",
+    "iconUrl": "https://just4anime.online/apple-touch-icon.png"
   },
   {
     "name": "AnimeSalt",
     "internalName": "AnimeSaltPlugin",
     "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/AnimeSaltPlugin.cs3",
     "apiVersion": 1,
-    "description": "AnimeSalt - Watch Hindi & Multi-Audio Anime & Movies with original high-speed FirePlayer CDN",
+    "description": "AnimeSalt Provider",
     "authors": [
       "error-898-15"
     ],
+    "status": 1,
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Cartoon",
-      "Movie",
-      "TvSeries"
+      "OVA"
     ],
-    "language": "hi",
+    "language": "en",
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/animesalt.png"
+  },
+  {
+    "name": "Blakite",
+    "internalName": "BlakitePlugin",
+    "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/BlakitePlugin.cs3",
+    "apiVersion": 1,
+    "description": "Blakite Provider",
+    "authors": [
+      "error-898-15"
+    ],
     "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AnimeSaltPlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "OVA"
+    ],
+    "language": "en",
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/blakite.png"
   },
   {
     "name": "Gogoanime",
     "internalName": "GogoanimePlugin",
     "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/GogoanimePlugin.cs3",
     "apiVersion": 1,
-    "description": "Gogoanime - Watch HD & Subbed Anime Online with Fast Original Servers (Megavid, MegaPlay & Direct MP4)",
+    "description": "Gogoanime Provider",
     "authors": [
       "error-898-15"
     ],
+    "status": 1,
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "Movie",
-      "TvSeries"
+      "OVA"
     ],
     "language": "en",
-    "status": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/GogoanimePlugin.cs3",
-    "fileHash": "",
-    "fileSize": 0,
-    "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
-    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/gogoanime.png"
   }
-    ]
+]
