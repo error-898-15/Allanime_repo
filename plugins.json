@@ -220,5 +220,29 @@
     "fileSize": 0,
     "iconUrl": "https://movienestbd.best/favicon.png",
     "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
+  },
+  {
+    "name": "AnimaHD",
+    "internalName": "AnimaHDPlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "description": "AnimaHD - Watch Hindi, Dual & Multi-Audio Anime & Movies with High-Speed Worker CDN & Google Drive",
+    "authors": [
+      "error-898-15"
+    ],
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "Cartoon",
+      "Movie",
+      "TvSeries"
+    ],
+    "language": "hi",
+    "status": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AnimaHDPlugin.cs3",
+    "fileHash": "",
+    "fileSize": 0,
+    "iconUrl": "https://animahd.com/wp-content/uploads/2026/06/e58b0fa5-1c81-4021-8a95-5c826587ba9b.png",
+    "repositoryUrl": "https://github.com/error-898-15/Uchiharepo"
   }
     ]
