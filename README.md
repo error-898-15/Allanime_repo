@@ -4,7 +4,7 @@ Official CloudStream CS3 extension repository maintained by **error-898-15**.
 
 ## Repository Details
 - **Owner**: `error-898-15`
-- **Repository**: `Uchiharepo`
+- **Repository**: `Allanimerepo`
 - **Shortcode URL**: `https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/repo.json`
 
 ## Adding to CloudStream 3
