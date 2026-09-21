@@ -3,7 +3,7 @@
     "name": "AnimeSalt",
     "internalName": "AnimeSaltPlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/AnimeSaltPlugin.cs3",
+    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/AnimeSaltPlugin.cs3",
     "apiVersion": 1,
     "description": "AnimeSalt Provider",
     "authors": [
@@ -16,13 +16,13 @@
       "OVA"
     ],
     "language": "en",
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/animesalt.png"
+    "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png"
   },
   {
-    "name": "Blakite",
+    "name": "Blakite Anime",
     "internalName": "BlakitePlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/BlakitePlugin.cs3",
+    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/BlakitePlugin.cs3",
     "apiVersion": 1,
     "description": "Blakite Provider",
     "authors": [
@@ -35,13 +35,13 @@
       "OVA"
     ],
     "language": "en",
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/blakite.png"
+    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937"
   },
   {
     "name": "Gogoanime",
     "internalName": "GogoanimePlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/GogoanimePlugin.cs3",
+    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/GogoanimePlugin.cs3",
     "apiVersion": 1,
     "description": "Gogoanime Provider",
     "authors": [
@@ -54,6 +54,25 @@
       "OVA"
     ],
     "language": "en",
-    "iconUrl": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/master/icons/gogoanime.png"
+    "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png"
+  },
+  {
+    "name": "Just4Anime",
+    "internalName": "Just4AnimePlugin",
+    "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/Just4AnimePlugin.cs3",
+    "apiVersion": 1,
+    "description": "Just4Anime - Watch Anime Online with Multi-Server High-Speed CDN & Sub/Dub",
+    "authors": [
+      "error-898-15"
+    ],
+    "status": 1,
+    "tvTypes": [
+      "Anime",
+      "AnimeMovie",
+      "OVA"
+    ],
+    "language": "en",
+    "iconUrl": "https://just4anime.online/apple-touch-icon.png"
   }
-]
+    ]
