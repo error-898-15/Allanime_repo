@@ -1,6 +1,5 @@
 package com.uchiharepo.animahd
 
-import android.util.Base64
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
@@ -9,11 +8,14 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
-import java.nio.charset.Charset
 
+/**
+ * AnimaHD Provider for CloudStream 3
+ * Made by Jihad
+ * Source: https://animahd.com
+ */
 class AnimaHDProvider : MainAPI() {
     override var mainUrl = "https://animahd.com"
     override var name = "AnimaHD"
@@ -57,134 +59,101 @@ class AnimaHDProvider : MainAPI() {
             )
         ).document
 
-        val items = document.select("a.animahd-card, .animahd-card").mapNotNull {
-            it.toSearchResult()
-        }.distinctBy { it.url }
+        val items = document.select(".ff-card-wrap, article.post, .app-card-item, .category-card").mapNotNull { card ->
+            card.toSearchResult()
+        }
 
         return newHomePageResponse(request.name, items)
     }
 
-    private fun cleanUrl(rawHref: String): String {
-        if (rawHref.contains("p=")) {
-            try {
-                val encodedPart = rawHref.substringAfter("p=").substringBefore("&")
-                val decoded = String(Base64.decode(encodedPart, Base64.DEFAULT), Charset.forName("UTF-8"))
-                if (decoded.startsWith("http")) return decoded
-            } catch (_: Exception) {
-            }
-        }
-        return fixUrl(rawHref)
-    }
-
-    private fun extractPoster(element: Element): String? {
-        val img = element.selectFirst("img")
-        val imgSrc = img?.let {
-            it.attr("src").ifEmpty { it.attr("data-src") }.ifEmpty { it.attr("data-lazy-src") }
-        }?.trim()
-
-        if (!imgSrc.isNullOrBlank() && !imgSrc.startsWith("data:image") && !imgSrc.contains("\${imgUrl}")) {
-            return if (imgSrc.startsWith("//")) "https:$imgSrc" else imgSrc
-        }
-
-        val style = element.selectFirst(".animahd-poster, [style*='background-image']")?.attr("style") ?: ""
-        val match = Regex("""url\(['"]?([^'")]+)['"]?\)""").find(style)
-        if (match != null) {
-            val url = match.groupValues[1].trim()
-            if (url.isNotBlank() && !url.contains("\${imgUrl}")) {
-                return if (url.startsWith("//")) "https:$url" else url
-            }
-        }
-        return null
-    }
-
     private fun Element.toSearchResult(): SearchResponse? {
-        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
-        val fullUrl = cleanUrl(rawHref)
-        if (!fullUrl.startsWith("http") || fullUrl.contains("/category/") || fullUrl.contains("/tag/")) {
-            return null
-        }
-
-        val title = this.selectFirst(".animahd-card-title")?.text()?.trim()
-            ?: this.attr("title").trim().ifEmpty { null }
-            ?: this.selectFirst("img")?.attr("alt")?.trim()?.ifEmpty { null }
+        val title = this.selectFirst(".ff-card-title, h2.entry-title, .entry-title, h2, h3")?.text()?.trim()
+            ?: this.selectFirst("img")?.attr("alt")?.trim()
             ?: return null
 
-        val posterUrl = extractPoster(this)
-        val isMovie = title.contains("Movie", ignoreCase = true) || fullUrl.contains("-movie-")
+        val href = this.selectFirst("a[href]")?.attr("href")?.trim() ?: return null
+        if (!href.startsWith("http") || href.contains("/category/") || href.contains("/tag/")) return null
+
+        val posterUrl = this.selectFirst("img")?.let { img ->
+            val src = img.attr("data-src").ifEmpty {
+                img.attr("data-lazy-src").ifEmpty {
+                    img.attr("src")
+                }
+            }
+            if (src.startsWith("//")) "https:$src" else src
+        }?.trim()
+
+        val isMovie = href.contains("-movie-") || title.contains("Movie", ignoreCase = true)
 
         return if (isMovie) {
-            newMovieSearchResponse(title, fullUrl, TvType.AnimeMovie) {
+            newMovieSearchResponse(title, href, TvType.AnimeMovie) {
                 this.posterUrl = posterUrl
             }
         } else {
-            newAnimeSearchResponse(title, fullUrl, TvType.Anime) {
+            newTvSeriesSearchResponse(title, href, TvType.Anime) {
                 this.posterUrl = posterUrl
             }
         }
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val results = mutableListOf<SearchResponse>()
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
-        // 1. Try WP-JSON REST API for fast structured results
+    override suspend fun search(query: String): List<SearchResponse> {
+        val q = query.trim()
+        val cleanQuery = URLEncoder.encode(q, "UTF-8")
+
+        // 1. Try WordPress REST API v2
         try {
-            val wpApiUrl = "$mainUrl/wp-json/wp/v2/posts?search=${URLEncoder.encode(query, "UTF-8")}&_embed&per_page=20"
-            val response = app.get(
-                wpApiUrl,
+            val apiUrl = "$mainUrl/wp-json/wp/v2/posts?search=$cleanQuery&per_page=20&_embed=1"
+            val res = app.get(
+                apiUrl,
                 headers = mapOf(
                     "User-Agent" to USER_AGENT,
                     "Referer" to "$mainUrl/"
                 )
             )
-            val posts = parseJson<List<WpPost>>(response.text)
-            for (post in posts) {
-                val title = post.title?.rendered?.replace("&#8217;", "'")?.replace("&amp;", "&")?.trim() ?: continue
-                val link = post.link ?: continue
-                val poster = post.embedded?.featuredMedia?.firstOrNull()?.sourceUrl
-                val isMovie = title.contains("Movie", ignoreCase = true) || link.contains("-movie-")
+            val posts = parseJson<List<WpPost>>(res.text)
+            if (posts.isNotEmpty()) {
+                val results = posts.mapNotNull { post ->
+                    val rawTitle = post.title?.rendered
+                        ?.replace(Regex("&amp;|&quot;|&#039;|&lt;|&gt;"), "")
+                        ?.trim() ?: return@mapNotNull null
+                    val link = post.link ?: return@mapNotNull null
+                    val poster = post.embedded?.featuredMedia?.firstOrNull()?.sourceUrl
+                    val isMovie = rawTitle.contains("Movie", ignoreCase = true) || link.contains("-movie-")
 
-                if (isMovie) {
-                    results.add(
-                        newMovieSearchResponse(title, link, TvType.AnimeMovie) {
+                    if (isMovie) {
+                        newMovieSearchResponse(rawTitle, link, TvType.AnimeMovie) {
                             this.posterUrl = poster
                         }
-                    )
-                } else {
-                    results.add(
-                        newAnimeSearchResponse(title, link, TvType.Anime) {
+                    } else {
+                        newTvSeriesSearchResponse(rawTitle, link, TvType.Anime) {
                             this.posterUrl = poster
                         }
-                    )
+                    }
                 }
+                if (results.isNotEmpty()) return results
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Fall through to HTML search
         }
 
-        if (results.isNotEmpty()) {
-            return results.distinctBy { it.url }
+        // 2. Fallback to standard HTML search
+        val searchUrl = "$mainUrl/?s=$cleanQuery"
+        val document = app.get(
+            searchUrl,
+            headers = mapOf(
+                "User-Agent" to USER_AGENT,
+                "Referer" to "$mainUrl/"
+            )
+        ).document
+
+        return document.select(".ff-card-wrap, article.post, .app-card-item, .category-card").mapNotNull { card ->
+            card.toSearchResult()
         }
-
-        // 2. Fallback to HTML Search
-        try {
-            val searchUrl = "$mainUrl/?s=${URLEncoder.encode(query, "UTF-8")}"
-            val document = app.get(
-                searchUrl,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Referer" to "$mainUrl/"
-                )
-            ).document
-
-            document.select("a.animahd-card, article.post, .search-result").forEach { element ->
-                element.toSearchResult()?.let { results.add(it) }
-            }
-        } catch (_: Exception) {
-        }
-
-        return results.distinctBy { it.url }
     }
 
-    override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse? {
         val document = app.get(
             url,
             headers = mapOf(
@@ -193,12 +162,12 @@ class AnimaHDProvider : MainAPI() {
             )
         ).document
 
-        val title = document.selectFirst("h1.ff-title, .ff-title, h1")?.text()?.trim()
-            ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.trim()
-            ?: "AnimaHD Media"
+        val title = document.selectFirst("h1.ff-title, h1.entry-title, h1")?.text()?.trim()
+            ?: "AnimaHD Anime"
 
-        val poster = document.selectFirst(".ff-poster-wrap img")?.attr("src")
-            ?: document.selectFirst("meta[property='og:image']")?.attr("content")
+        val poster = document.selectFirst(".ff-poster img, .post-thumbnail img, meta[property='og:image']")?.let {
+            if (it.tagName() == "meta") it.attr("content") else it.attr("src")
+        } ?: document.selectFirst("meta[property='og:image']")?.attr("content")
 
         val backdrop = document.selectFirst(".ff-hero-bg")?.attr("style")?.let { style ->
             Regex("""url\(['"]?([^'")]+)['"]?\)""").find(style)?.groupValues?.get(1)
@@ -209,30 +178,25 @@ class AnimaHDProvider : MainAPI() {
 
         val metaText = document.selectFirst(".ff-meta")?.text() ?: ""
         val year = Regex("""\b(19\d\d|20\d\d)\b""").find(metaText)?.groupValues?.get(1)?.toIntOrNull()
-        val rating = Regex("""(\d+\.\d+)""").find(metaText)?.groupValues?.get(1)?.toRatingInt()
 
         val tags = document.select(".ff-genres .ff-pill, .badge-box, .multilingual-badge")
             .map { it.text().trim() }
             .filter { it.isNotBlank() }
             .distinct()
 
-        val episodes = mutableListOf<Episode>()
+        val episodes = ArrayList<Episode>()
         val epRows = document.select("a.app-ep-row-item, a[data-fileid]")
 
         epRows.forEachIndexed { index, row ->
             val seasonStr = row.attr("data-season")
             val seasonNum = Regex("""\b(\d+)\b""").find(seasonStr)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-
             val rawEpTitle = row.selectFirst(".gdrive-ep-meta div:first-child")?.text()?.trim()
                 ?: row.attr("title").trim().ifEmpty { row.text().trim() }
-
             val cleanEpTitle = rawEpTitle
                 .replace(Regex("""^\[ANIMAHD\.COM\]\s*""", RegexOption.IGNORE_CASE), "")
                 .trim()
-
             val epNum = Regex("""(?i)(?:E|Episode\s*)(\d+)""").find(cleanEpTitle)?.groupValues?.get(1)?.toIntOrNull()
                 ?: (index + 1)
-
             val fileId = row.attr("data-fileid").ifEmpty {
                 val href = row.attr("href")
                 Regex("""file_id=([a-zA-Z0-9_-]+)""").find(href)?.groupValues?.get(1) ?: ""
@@ -241,7 +205,6 @@ class AnimaHDProvider : MainAPI() {
             if (fileId.isNotBlank()) {
                 val epThumb = row.selectFirst("img")?.attr("src")
                 val streamPlayerUrl = "$PLAYER_BASE/?id=$fileId"
-
                 episodes.add(
                     newEpisode(streamPlayerUrl) {
                         this.name = if (cleanEpTitle.isNotBlank()) cleanEpTitle else "Episode $epNum"
@@ -258,7 +221,6 @@ class AnimaHDProvider : MainAPI() {
         if (episodes.isEmpty()) {
             val singleFileId = document.selectFirst("[data-fileid]")?.attr("data-fileid")
                 ?: Regex("""(?:file_id=|id=)([a-zA-Z0-9_-]{20,})""").find(document.html())?.groupValues?.get(1)
-
             if (!singleFileId.isNullOrBlank()) {
                 episodes.add(
                     newEpisode("$PLAYER_BASE/?id=$singleFileId") {
@@ -271,24 +233,25 @@ class AnimaHDProvider : MainAPI() {
             }
         }
 
-        return if (isMovie && episodes.size <= 1) {
-            newMovieLoadResponse(title, url, TvType.AnimeMovie, episodes.firstOrNull()?.data ?: url) {
+        val sortedEpisodes = episodes.distinctBy { it.data }.sortedWith(
+            compareBy<Episode> { it.season ?: 1 }.thenBy { it.episode ?: 1 }
+        )
+
+        return if (isMovie && sortedEpisodes.size <= 1) {
+            newMovieLoadResponse(title, url, TvType.AnimeMovie, sortedEpisodes.firstOrNull()?.data ?: url) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = backdrop
                 this.plot = plot
-                this.year = year
-                this.rating = rating
                 this.tags = tags
+                this.year = year
             }
         } else {
-            newAnimeLoadResponse(title, url, TvType.Anime) {
+            newTvSeriesLoadResponse(title, url, TvType.Anime, sortedEpisodes) {
                 this.posterUrl = poster
                 this.backgroundPosterUrl = backdrop
                 this.plot = plot
-                this.year = year
-                this.rating = rating
                 this.tags = tags
-                addEpisodes(DubStatus.Dubbed, episodes)
+                this.year = year
             }
         }
     }
@@ -300,7 +263,6 @@ class AnimaHDProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         var loadedAny = false
-
         val fileId = Regex("""(?:id=)([a-zA-Z0-9_-]+)""").find(data)?.groupValues?.get(1)
             ?: data.substringAfter("id=").substringBefore("&")
 
@@ -309,7 +271,7 @@ class AnimaHDProvider : MainAPI() {
         val playerUrl = if (data.startsWith("http")) data else "$PLAYER_BASE/?id=$fileId"
 
         try {
-            // 1. Resolve Primary High-Speed Worker CDN Stream
+            // 1. Visit player page to extract the High-Speed Worker CDN stream
             val playerRes = app.get(
                 playerUrl,
                 headers = mapOf(
@@ -317,7 +279,6 @@ class AnimaHDProvider : MainAPI() {
                     "Referer" to "$mainUrl/"
                 )
             )
-
             val doc = playerRes.document
             val sourceTag = doc.selectFirst("video source[src], source[src]")
             val streamUrl = sourceTag?.attr("src")?.trim()
@@ -325,8 +286,8 @@ class AnimaHDProvider : MainAPI() {
             if (!streamUrl.isNullOrBlank() && streamUrl.startsWith("http")) {
                 callback.invoke(
                     newExtractorLink(
-                        source = "AnimaHD Fast CDN",
-                        name = "AnimaHD Fast CDN (High-Speed Stream)",
+                        source = this.name,
+                        name = "${this.name} Fast CDN",
                         url = streamUrl,
                         type = ExtractorLinkType.VIDEO
                     ) {
@@ -341,12 +302,12 @@ class AnimaHDProvider : MainAPI() {
                 loadedAny = true
             }
 
-            // 2. Google Drive Alternate Direct Stream (Force Download)
+            // 2. Google Drive Direct Stream
             val driveDirectUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
             callback.invoke(
                 newExtractorLink(
                     source = "Google Drive",
-                    name = "Google Drive (Alternate Direct Stream)",
+                    name = "Google Drive (Direct Stream)",
                     url = driveDirectUrl,
                     type = ExtractorLinkType.VIDEO
                 ) {
@@ -365,9 +326,9 @@ class AnimaHDProvider : MainAPI() {
                 if (loadExtractor(drivePreviewUrl, playerRes.url, subtitleCallback, callback)) {
                     loadedAny = true
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                // Silently continue
             }
-
         } catch (e: Exception) {
             val driveDirectUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
             callback.invoke(
