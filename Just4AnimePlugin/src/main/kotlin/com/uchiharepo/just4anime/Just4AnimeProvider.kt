@@ -138,7 +138,6 @@ class Just4AnimeProvider : MainAPI() {
                 this.backgroundPosterUrl = bannerUrl
                 this.plot = description
                 this.tags = anilist?.genres
-                this.rating = anilist?.rating?.times(100)?.toInt()
                 this.year = anilist?.releaseDate
             }
         } else {
@@ -147,7 +146,6 @@ class Just4AnimeProvider : MainAPI() {
                 this.backgroundPosterUrl = bannerUrl
                 this.plot = description
                 this.tags = anilist?.genres
-                this.rating = anilist?.rating?.times(100)?.toInt()
                 this.year = anilist?.releaseDate
             }
         }
@@ -270,7 +268,6 @@ class Just4AnimeProvider : MainAPI() {
                                         source = this.name,
                                         streamUrl = streamUrl,
                                         referer = referer,
-                                        quality = Qualities.Unknown.value,
                                         headers = (src.headers ?: emptyMap()) + mapOf("User-Agent" to USER_AGENT),
                                         name = serverLabel
                                     ).forEach { link ->
@@ -359,14 +356,13 @@ data class AnilistItem(
     fun toSearchResponse(): SearchResponse? {
         val animeId = id ?: return null
         val titleStr = title?.english ?: title?.romaji ?: title?.userPreferred ?: title?.native ?: return null
-        return newAnimeSearchResponse(titleStr, "https://just4anime.online/anime/$animeId") {
+        val tvType = when (format?.uppercase()) {
+            "MOVIE" -> TvType.AnimeMovie
+            "OVA", "ONA", "SPECIAL" -> TvType.OVA
+            else -> TvType.Anime
+        }
+        return newAnimeSearchResponse(titleStr, "https://just4anime.online/anime/$animeId", tvType) {
             this.posterUrl = image
-            this.rating = rating?.times(100)?.toInt()
-            this.type = when (format?.uppercase()) {
-                "MOVIE" -> TvType.AnimeMovie
-                "OVA", "ONA", "SPECIAL" -> TvType.OVA
-                else -> TvType.Anime
-            }
         }
     }
 }
