@@ -1,24 +1,5 @@
 [
   {
-    "name": "Just4Anime",
-    "internalName": "Just4AnimePlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/build/Just4AnimePlugin.cs3",
-    "apiVersion": 1,
-    "description": "Just4Anime - Watch Anime Online with Multi-Server High-Speed CDN & Sub/Dub",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "OVA"
-    ],
-    "language": "en",
-    "iconUrl": "https://just4anime.online/apple-touch-icon.png"
-  },
-  {
     "name": "AnimeSalt",
     "internalName": "AnimeSaltPlugin",
     "version": 1,
