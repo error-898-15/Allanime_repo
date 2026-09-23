@@ -54,7 +54,7 @@ class Just4AnimeProvider : MainAPI() {
         val sortParam = URLEncoder.encode("[\"${request.data}\"]", "UTF-8")
         val url = "$SITE_API/advanced-search?sort=$sortParam&page=$page&perPage=20"
         val responseText = app.get(url, headers = DEFAULT_HEADERS).text
-        val searchResponse = parseJson<SearchResponse>(responseText)
+        val searchResponse = parseJson<SiteSearchResponse>(responseText)
         val items = searchResponse.data?.results ?: emptyList()
 
         val home = items.mapNotNull { it.toSearchResponse() }
@@ -66,7 +66,7 @@ class Just4AnimeProvider : MainAPI() {
         val encodedQuery = URLEncoder.encode(query.trim(), "UTF-8")
         val url = "$SITE_API/advanced-search?query=$encodedQuery&page=1&perPage=25"
         val responseText = app.get(url, headers = DEFAULT_HEADERS).text
-        val searchResponse = parseJson<SearchResponse>(responseText)
+        val searchResponse = parseJson<SiteSearchResponse>(responseText)
         return searchResponse.data?.results?.mapNotNull { it.toSearchResponse() } ?: emptyList()
     }
 
@@ -77,7 +77,7 @@ class Just4AnimeProvider : MainAPI() {
         val epApiUrl = "$SITE_API/episodes/$animeId"
         val responseText = app.get(epApiUrl, headers = DEFAULT_HEADERS).text
         val detailResp = parseJson<EpisodesApiResponse>(responseText)
-        val data = detailResp.data ?: throw ErrorLoadingException("Failed to load anime details")
+        val data = detailResp.data ?: throw Exception("Failed to load anime details")
 
         val title = data.title?.takeIf { it.isNotBlank() }
             ?: data.titleRomaji?.takeIf { it.isNotBlank() }
@@ -142,7 +142,7 @@ class Just4AnimeProvider : MainAPI() {
     ): Boolean {
         val linkData = try {
             parseJson<EpisodeLinkData>(data)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             val clean = data.trim().removePrefix("$mainUrl/anime/").removePrefix("$mainUrl/watch/")
             val parts = clean.split("/", "$", "?ep=")
             val id = parts.firstOrNull() ?: clean
@@ -168,7 +168,7 @@ class Just4AnimeProvider : MainAPI() {
             availResp.data?.dub?.providers?.forEach { p ->
                 p.code?.let { dubProviders.add(it) }
             }
-        } catch (_: Throwable) {}
+        } catch (e: Throwable) {}
 
         // Fallbacks if server discovery returned empty list
         if (subProviders.isEmpty()) {
@@ -240,7 +240,7 @@ class Just4AnimeProvider : MainAPI() {
                             callback.invoke(link)
                             loadedAny = true
                         }
-                    } catch (_: Throwable) {}
+                    } catch (e: Throwable) {}
                 }
 
                 // 3. Extract Subtitles
@@ -272,7 +272,7 @@ class Just4AnimeProvider : MainAPI() {
                     )
                     if (loaded) loadedAny = true
                 }
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) {}
         }
 
         return loadedAny
@@ -295,7 +295,7 @@ class Just4AnimeProvider : MainAPI() {
     }
 
     // JSON Data Models
-    data class SearchResponse(
+    data class SiteSearchResponse(
         @JsonProperty("success") val success: Boolean? = null,
         @JsonProperty("data") val data: SearchData? = null
     )
