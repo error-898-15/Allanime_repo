@@ -5,3 +5,4 @@ include(":AnimeSaltPlugin")
 include(":GogoanimePlugin")
 include(":YoutubePlugin")
 include(":VidSrcPlugin")
+include(":PrimeVideoPlugin") // <--- এটি যোগ করুন
