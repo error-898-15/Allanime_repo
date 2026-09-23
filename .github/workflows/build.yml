@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -85,10 +84,6 @@ jobs:
               'VidSrcPlugin': {
                   'name': 'VidSrc',
                   'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
-              },
-              'Just4AnimePlugin': {
-                  'name': 'Just4Anime',
-                  'iconUrl': 'https://just4anime.online/apple-touch-icon.png'
               }
           }
 
@@ -109,6 +104,7 @@ jobs:
                       with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                           for name, data in items.items():
                               zout.writestr(name, data)
+
                   with open(cs3_file, 'rb') as f:
                       content = f.read()
                   h = 'sha256-' + hashlib.sha256(content).hexdigest()
