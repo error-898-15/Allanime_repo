@@ -92,5 +92,23 @@
     ],
     "language": "en",
     "iconUrl": "https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png"
+  },
+  {
+  "name": "Anime Dub Hindi",
+  "internalName": "AnimeDubHindiPlugin",
+  "version": 1,
+  "description": "AnimeDubHindi - Watch Hindi, Tamil, Telugu, and Multi-Audio Anime & Movies with High-Speed Direct Cloud CDN",
+  "authors": [
+    "error-898-15"
+  ],
+  "tvTypes": [
+    "Anime",
+    "AnimeMovie",
+    "Movie",
+    "TvSeries"
+  ],
+  "language": "hi",
+  "iconUrl": "https://www.animedubhindi.link/wp-content/uploads/2024/07/Untitled-design.png",
+  "status": 1
   }
 ]
