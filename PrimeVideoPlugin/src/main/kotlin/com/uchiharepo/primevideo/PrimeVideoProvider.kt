@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.Jsoup
 import java.net.URLEncoder
 import java.util.Base64
 
@@ -37,7 +38,7 @@ class PrimeVideoProvider : MainAPI() {
                 val json = mapper.readTree(res)
                 val hash = json.get("token_hash")?.asText()
                 if (!hash.isNullOrBlank()) {
-                    val decoded = String(Base64.getDecoder().decode(hash), Charsets.UTF_8)
+                    val decoded = String(Base64.getDecoder().decode(hash), Charsets.UTF_8).trimEnd('/')
                     newTvApi = decoded
                     return decoded
                 }
@@ -57,10 +58,30 @@ class PrimeVideoProvider : MainAPI() {
 
         val items = mutableListOf<SearchResponse>()
         try {
-            val res = app.get("$base/newtv/main.php", headers = headers).text
-            val json = mapper.readTree(res)
+            // ১. মোবাইল হোম এপিআই থেকে সরাসরি ডেটা লোড
+            val homeRes = app.get("https://net52.cc/mobile/home?app=1", headers = headers).text
+            if (homeRes.contains("data-post")) {
+                val doc = Jsoup.parse(homeRes)
+                val cards = doc.select("article, .top10-post, [data-post]")
+                for (card in cards) {
+                    val id = card.attr("data-post").takeIf { it.isNotBlank() } ?: card.id().replace("post-", "")
+                    if (id.isBlank()) continue
+                    val title = card.selectFirst(".title, h2, h3, .entry-title")?.text()?.takeIf { it.isNotBlank() } ?: "Title"
+                    val img = card.selectFirst("img")?.let { 
+                        it.attr("src").takeIf { s -> s.isNotBlank() } ?: it.attr("data-src")
+                    } ?: "https://imgcdn.kim/poster/v/$id.jpg"
+                    
+                    items.add(newMovieSearchResponse(title, "$base/post/$id", TvType.Movie) {
+                        this.posterUrl = img
+                    })
+                }
+            }
 
-            if (request.data == "featured") {
+            // ২. ব্যাকআপ হিসেবে newtv main.php
+            if (items.isEmpty()) {
+                val res = app.get("$base/newtv/main.php", headers = headers).text
+                val json = mapper.readTree(res)
+
                 val sliderNode = json.get("slider")
                 if (sliderNode != null && sliderNode.isArray) {
                     for (s in sliderNode) {
@@ -72,17 +93,16 @@ class PrimeVideoProvider : MainAPI() {
                         })
                     }
                 }
-            } else {
+
                 val postNode = json.get("post")
                 if (postNode != null && postNode.isArray) {
                     for (section in postNode) {
                         val ids = section.get("ids")?.asText()?.split(",") ?: emptyList()
-                        for (id in ids.take(12)) {
+                        for (id in ids.take(15)) {
                             val cleanId = id.trim()
                             if (cleanId.isEmpty()) continue
-                            val poster = "https://imgcdn.kim/poster/341/$cleanId.jpg"
-                            items.add(newMovieSearchResponse("", "$base/post/$cleanId", TvType.Movie) {
-                                this.posterUrl = poster
+                            items.add(newMovieSearchResponse("Title $cleanId", "$base/post/$cleanId", TvType.Movie) {
+                                this.posterUrl = "https://imgcdn.kim/poster/341/$cleanId.jpg"
                             })
                         }
                     }
@@ -104,19 +124,21 @@ class PrimeVideoProvider : MainAPI() {
             "Ott" to "pv"
         )
 
-        val res = app.get(searchUrl, headers = headers).text
-        val json = mapper.readTree(res)
         val list = mutableListOf<SearchResponse>()
-        val results = json.get("searchResult") ?: return emptyList()
+        try {
+            val res = app.get(searchUrl, headers = headers).text
+            val json = mapper.readTree(res)
+            val results = json.get("searchResult") ?: return emptyList()
 
-        for (item in results) {
-            val id = item.get("id")?.asText() ?: continue
-            val title = item.get("t")?.asText() ?: "Unknown"
-            val poster = "https://imgcdn.kim/poster/341/$id.jpg"
-            list.add(newTvSeriesSearchResponse(title, "$base/post/$id", TvType.TvSeries) {
-                this.posterUrl = poster
-            })
-        }
+            for (item in results) {
+                val id = item.get("id")?.asText() ?: continue
+                val title = item.get("t")?.asText() ?: "Unknown"
+                val poster = "https://imgcdn.kim/poster/341/$id.jpg"
+                list.add(newTvSeriesSearchResponse(title, "$base/post/$id", TvType.TvSeries) {
+                    this.posterUrl = poster
+                })
+            }
+        } catch (_: Exception) {}
         return list
     }
 
