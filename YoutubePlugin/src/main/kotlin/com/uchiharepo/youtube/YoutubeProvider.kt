@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.Actor
-import com.lagradost.cloudstream3.utils.ActorData
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 
@@ -90,7 +88,7 @@ class YoutubeProvider : MainAPI() {
             val results = mutableListOf<SearchResponse>()
             extractVideoRenderers(rootNode, results)
             results.distinctBy { it.url }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             emptyList()
         }
     }
@@ -121,12 +119,14 @@ class YoutubeProvider : MainAPI() {
                     })
                 }
             }
-            node.fields().forEachRemaining { (_, child) ->
-                extractVideoRenderers(child, results)
+            val fields = node.fields()
+            while (fields.hasNext()) {
+                extractVideoRenderers(fields.next().value, results)
             }
         } else if (node.isArray) {
-            node.elements().forEachRemaining { child ->
-                extractVideoRenderers(child, results)
+            val elements = node.elements()
+            while (elements.hasNext()) {
+                extractVideoRenderers(elements.next(), results)
             }
         }
     }
@@ -152,8 +152,8 @@ class YoutubeProvider : MainAPI() {
                 author = json.path("author_name").asText("")
                 posterUrl = json.path("thumbnail_url").asText(posterUrl)
             }
-        } catch (_: Exception) {
-            // Safe fallback retained
+        } catch (e: Exception) {
+            // Keep safe fallbacks
         }
 
         return newMovieLoadResponse(
@@ -166,14 +166,6 @@ class YoutubeProvider : MainAPI() {
             this.plot = if (author.isNotBlank()) "Channel: $author\nWatch directly on YouTube." else "Watch on YouTube."
             if (author.isNotBlank()) {
                 this.tags = listOf(author, "YouTube")
-                this.actors = listOf(
-                    ActorData(
-                        Actor(
-                            author,
-                            posterUrl
-                        )
-                    )
-                )
             }
         }
     }
@@ -190,6 +182,7 @@ class YoutubeProvider : MainAPI() {
         // Invokes CloudStream's native YouTube extractor engine
         return loadExtractor(
             watchUrl,
+            "$mainUrl/",
             subtitleCallback,
             callback
         )
