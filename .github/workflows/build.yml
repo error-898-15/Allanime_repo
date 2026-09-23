@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -64,6 +63,7 @@ jobs:
         run: |
           cat << 'PYEOF' > /tmp/update_plugins.py
           import json, glob, zipfile, os, hashlib
+
           PLUGIN_META = {
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
@@ -76,8 +76,13 @@ jobs:
               'GogoanimePlugin': {
                   'name': 'Gogoanime',
                   'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
+              },
+              'YoutubePlugin': {
+                  'name': 'YouTube',
+                  'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png'
               }
           }
+
           cs3_hashes = {}
           for cs3_file in glob.glob('**/*.cs3', recursive=True):
               base = os.path.basename(cs3_file)
@@ -95,6 +100,7 @@ jobs:
                       with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                           for name, data in items.items():
                               zout.writestr(name, data)
+
                   with open(cs3_file, 'rb') as f:
                       content = f.read()
                   h = 'sha256-' + hashlib.sha256(content).hexdigest()
@@ -102,6 +108,7 @@ jobs:
                   cs3_hashes[base] = (h, sz)
               except Exception as e:
                   print('Warning on cs3:', e)
+
           for pjson in ['build/plugins.json', 'plugins.json']:
               if os.path.exists(pjson):
                   try:
