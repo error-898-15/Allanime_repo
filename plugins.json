@@ -62,15 +62,15 @@
     "version": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/YoutubePlugin.cs3",
     "apiVersion": 1,
-    "description": "YouTube Provider",
+    "description": "YouTube - Stream trending videos, music, gaming, news, and official channels directly on CloudStream",
     "authors": [
       "error-898-15"
     ],
     "status": 1,
     "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "OVA"
+      "Others",
+      "Live",
+      "TvSeries"
     ],
     "language": "en",
     "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png"
@@ -81,36 +81,16 @@
     "version": 1,
     "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/VidSrcPlugin.cs3",
     "apiVersion": 1,
-    "description": "VidSrc Provider",
+    "description": "VidSrc (https://vidsrc.sbs/) - Watch Movies & TV Series in HD with multi-server playback (Pro Multi, CineSrc, Videasy 4K, VidSrc)",
     "authors": [
       "error-898-15"
     ],
     "status": 1,
     "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "OVA"
+      "Movie",
+      "TvSeries"
     ],
     "language": "en",
     "iconUrl": "https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png"
-  },
-  {
-    "name": "Just4Anime",
-    "internalName": "Just4AnimePlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/Just4AnimePlugin.cs3",
-    "apiVersion": 1,
-    "description": "Just4Anime Provider",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "OVA"
-    ],
-    "language": "en",
-    "iconUrl": "https://just4anime.online/apple-touch-icon.png"
   }
-    ]
+]
