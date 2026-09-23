@@ -2,8 +2,7 @@
 """
 plugin_update.py - CloudStream CS3 Plugin Catalog & Metadata Updater
 Repository: error-898-15/Allanime_repo
-Updates internal .cs3 zip manifests, computes SHA-256 hashes & file sizes,
-and produces a 100% compliant plugins.json catalog for CloudStream 3.
+Pure standard library Python 3 (os, sys, glob, json, zipfile, hashlib)
 """
 
 import os
@@ -95,7 +94,6 @@ def update_cs3_artifacts():
                 manifest = json.loads(archive_files['manifest.json'].decode('utf-8'))
                 internal_name = manifest.get('internalName', '')
 
-                # Find matching meta
                 meta = None
                 for key, val in PLUGIN_META.items():
                     if key.lower() in base_name.lower() or internal_name.lower() == key.lower():
@@ -119,16 +117,19 @@ def update_cs3_artifacts():
             print(f"  [WARN] Could not update inner manifest of {base_name}: {e}")
 
         # 2. Compute SHA-256 hash & file size
-        with open(cs3_path, 'rb') as f:
-            data = f.read()
-        file_hash = 'sha256-' + hashlib.sha256(data).hexdigest()
-        file_size = len(data)
-        cs3_info[base_name] = {
-            'hash': file_hash,
-            'size': file_size,
-            'path': cs3_path
-        }
-        print(f"  [HASH] {file_hash[:20]}... | SIZE: {file_size} bytes")
+        try:
+            with open(cs3_path, 'rb') as f:
+                data = f.read()
+            file_hash = 'sha256-' + hashlib.sha256(data).hexdigest()
+            file_size = len(data)
+            cs3_info[base_name] = {
+                'hash': file_hash,
+                'size': file_size,
+                'path': cs3_path
+            }
+            print(f"  [HASH] {file_hash[:20]}... | SIZE: {file_size} bytes")
+        except Exception as e:
+            print(f"  [WARN] Could not hash {base_name}: {e}")
 
     return cs3_info
 
@@ -137,7 +138,6 @@ def sync_plugins_json(cs3_info):
     targets = ['build/plugins.json', 'plugins.json']
     existing_catalog = []
 
-    # Load existing catalog if available
     for p in targets:
         if os.path.exists(p):
             try:
@@ -148,14 +148,12 @@ def sync_plugins_json(cs3_info):
             except Exception as e:
                 print(f"Failed to read {p}: {e}")
 
-    # Index existing catalog by internalName
     catalog_map = {}
     for item in existing_catalog:
         iname = item.get('internalName')
         if iname:
             catalog_map[iname] = item
 
-    # Ensure all registered plugins in PLUGIN_META exist
     for plugin_key, meta in PLUGIN_META.items():
         base_cs3 = f"{plugin_key}.cs3"
         plugin_url = f"https://raw.githubusercontent.com/{REPO}/builds/{base_cs3}"
@@ -174,7 +172,6 @@ def sync_plugins_json(cs3_info):
             "iconUrl": meta['iconUrl']
         })
 
-        # Apply metadata overrides
         item['name'] = meta['name']
         item['description'] = meta['description']
         item['iconUrl'] = meta['iconUrl']
@@ -182,7 +179,6 @@ def sync_plugins_json(cs3_info):
         item['tvTypes'] = meta['tvTypes']
         item['url'] = plugin_url
 
-        # Apply hash and size if cs3 was built
         matched_cs3 = None
         for bname, info in cs3_info.items():
             if plugin_key.lower() in bname.lower():
@@ -197,12 +193,14 @@ def sync_plugins_json(cs3_info):
 
     final_list = list(catalog_map.values())
 
-    # Write out to build/plugins.json and plugins.json
     os.makedirs('build', exist_ok=True)
     for p in targets:
-        with open(p, 'w') as f:
-            json.dump(final_list, f, indent=2)
-        print(f"Wrote updated {p} with {len(final_list)} plugins.")
+        try:
+            with open(p, 'w') as f:
+                json.dump(final_list, f, indent=2)
+            print(f"Wrote updated {p} with {len(final_list)} plugins.")
+        except Exception as e:
+            print(f"Error writing {p}: {e}")
 
 if __name__ == "__main__":
     info = update_cs3_artifacts()
