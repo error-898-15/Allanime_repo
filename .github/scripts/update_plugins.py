@@ -24,6 +24,10 @@ PLUGIN_META = {
     'VidSrcPlugin': {
         'name': 'VidSrc',
         'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
+    },
+    'PrimeVideoPlugin': {
+        'name': 'Prime Video',
+        'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
     }
 }
 
