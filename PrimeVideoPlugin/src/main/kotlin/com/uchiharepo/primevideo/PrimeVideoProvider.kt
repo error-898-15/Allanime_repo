@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URLEncoder
 import java.util.Base64
 
@@ -14,6 +15,11 @@ class PrimeVideoProvider : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
     override var lang = "en"
     override val hasMainPage = true
+
+    override val mainPage = mainPageOf(
+        "featured" to "Featured Spotlight",
+        "home" to "Prime Video Shows & Movies"
+    )
 
     private val mapper = jacksonObjectMapper()
     private val NEW_TV_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0 /OS.GatuNewTV v1.0"
@@ -40,7 +46,6 @@ class PrimeVideoProvider : MainAPI() {
         return "https://tv.imgcdn.kim"
     }
 
-    // ১. হোমপেজ ইমপ্লিমেন্টেশন (This operation is not implemented এর সমাধান)
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val base = resolveNewTvApi()
         val headers = mapOf(
@@ -50,54 +55,44 @@ class PrimeVideoProvider : MainAPI() {
             "Ott" to "pv"
         )
 
-        val res = app.get("$base/newtv/main.php", headers = headers).text
-        val json = mapper.readTree(res)
-        val homePageList = mutableListOf<HomePageList>()
+        val items = mutableListOf<SearchResponse>()
+        try {
+            val res = app.get("$base/newtv/main.php", headers = headers).text
+            val json = mapper.readTree(res)
 
-        // ব্যানার / স্লাইডার আইটেম
-        val sliderNode = json.get("slider")
-        if (sliderNode != null && sliderNode.isArray) {
-            val sliderItems = mutableListOf<SearchResponse>()
-            for (s in sliderNode) {
-                val id = s.get("id")?.asText() ?: continue
-                val title = s.get("title")?.asText()?.takeIf { it.isNotBlank() } ?: "Featured"
-                val img = s.get("img")?.asText() ?: "https://imgcdn.kim/poster/h/$id.jpg"
-                sliderItems.add(newMovieSearchResponse(title, "$base/post/$id", TvType.Movie) {
-                    this.posterUrl = img
-                })
-            }
-            if (sliderItems.isNotEmpty()) {
-                homePageList.add(HomePageList("Featured Spotlight", sliderItems, isHorizontalImages = true))
-            }
-        }
-
-        // ক্যাটাগরি ও রো আইটেম
-        val postNode = json.get("post")
-        if (postNode != null && postNode.isArray) {
-            for (section in postNode) {
-                val categoryName = section.get("cate")?.asText() ?: continue
-                val ids = section.get("ids")?.asText()?.split(",") ?: emptyList()
-                val items = mutableListOf<SearchResponse>()
-
-                for (id in ids.take(15)) {
-                    val cleanId = id.trim()
-                    if (cleanId.isEmpty()) continue
-                    val poster = "https://imgcdn.kim/poster/341/$cleanId.jpg"
-                    items.add(newMovieSearchResponse("", "$base/post/$cleanId", TvType.Movie) {
-                        this.posterUrl = poster
-                    })
+            if (request.data == "featured") {
+                val sliderNode = json.get("slider")
+                if (sliderNode != null && sliderNode.isArray) {
+                    for (s in sliderNode) {
+                        val id = s.get("id")?.asText() ?: continue
+                        val title = s.get("title")?.asText()?.takeIf { it.isNotBlank() } ?: "Featured"
+                        val img = s.get("img")?.asText() ?: "https://imgcdn.kim/poster/h/$id.jpg"
+                        items.add(newMovieSearchResponse(title, "$base/post/$id", TvType.Movie) {
+                            this.posterUrl = img
+                        })
+                    }
                 }
-
-                if (items.isNotEmpty()) {
-                    homePageList.add(HomePageList(categoryName, items))
+            } else {
+                val postNode = json.get("post")
+                if (postNode != null && postNode.isArray) {
+                    for (section in postNode) {
+                        val ids = section.get("ids")?.asText()?.split(",") ?: emptyList()
+                        for (id in ids.take(12)) {
+                            val cleanId = id.trim()
+                            if (cleanId.isEmpty()) continue
+                            val poster = "https://imgcdn.kim/poster/341/$cleanId.jpg"
+                            items.add(newMovieSearchResponse("", "$base/post/$cleanId", TvType.Movie) {
+                                this.posterUrl = poster
+                            })
+                        }
+                    }
                 }
             }
-        }
+        } catch (_: Exception) {}
 
-        return HomePageResponse(homePageList)
+        return newHomePageResponse(request.name, items)
     }
 
-    // ২. সার্চ মেথড
     override suspend fun search(query: String): List<SearchResponse> {
         val base = resolveNewTvApi()
         val encQuery = URLEncoder.encode(query, "UTF-8")
@@ -125,7 +120,6 @@ class PrimeVideoProvider : MainAPI() {
         return list
     }
 
-    // ৩. মুভি ও টিভি সিরিজ ডিটেইলস এবং এপিসোড লোড মেথড
     override suspend fun load(url: String): LoadResponse {
         val base = resolveNewTvApi()
         val id = url.substringAfterLast("/").substringBefore("?")
@@ -179,7 +173,6 @@ class PrimeVideoProvider : MainAPI() {
         }
     }
 
-    // ৪. ভিডিও লিংক লোড মেথড
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -212,14 +205,15 @@ class PrimeVideoProvider : MainAPI() {
             val proxiedUrl = StreamProxy.localUrl(videoLink)
 
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = "$name · HD",
                     url = proxiedUrl,
-                    referer = referer,
-                    quality = Qualities.P1080.value,
                     type = if (videoLink.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.M3U8
-                )
+                ) {
+                    this.referer = referer
+                    this.quality = Qualities.P1080.value
+                }
             )
             return true
         }
