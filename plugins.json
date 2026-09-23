@@ -55,25 +55,5 @@
     ],
     "language": "en",
     "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png"
-  },
-  {
-    "name": "Just4Anime",
-    "internalName": "Just4AnimePlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/Just4AnimePlugin.cs3",
-    "apiVersion": 1,
-    "description": "Just4Anime - Stream HD Anime, Airing Episodes, Movies & Multi-Server Streams (Sub & Dub)",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "en",
-    "iconUrl": "https://just4anime.online/apple-touch-icon.png"
   }
 ]
