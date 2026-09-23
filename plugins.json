@@ -55,5 +55,24 @@
     ],
     "language": "en",
     "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png"
+  },
+  {
+    "name": "YouTube",
+    "internalName": "YoutubePlugin",
+    "version": 1,
+    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/YoutubePlugin.cs3",
+    "apiVersion": 1,
+    "description": "YouTube - Stream trending videos, music, gaming, news, and official channels directly on CloudStream",
+    "authors": [
+      "error-898-15"
+    ],
+    "status": 1,
+    "tvTypes": [
+      "Others",
+      "Live",
+      "TvSeries"
+    ],
+    "language": "en",
+    "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png"
   }
-]
+    ]
