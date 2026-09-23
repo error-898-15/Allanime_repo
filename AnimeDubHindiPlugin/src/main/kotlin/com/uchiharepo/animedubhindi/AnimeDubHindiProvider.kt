@@ -1,14 +1,11 @@
 package com.uchiharepo.animedubhindi
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.net.URLEncoder
@@ -83,7 +80,7 @@ class AnimeDubHindiProvider : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val titleElement = this.selectFirst("h2.entry-title a, h2.entry-title, .entry-title a")
         val title = titleElement?.text()?.trim()
-            ?: this.selectFirst("img")?.attr("alt")?.replace(Regex("""^(?:Read:s*|Images*)""", RegexOption.IGNORE_CASE), "")?.trim()
+            ?: this.selectFirst("img")?.attr("alt")?.replace(Regex("""^(?:Read:\s*|Image\s*)""", RegexOption.IGNORE_CASE), "")?.trim()
             ?: return null
         val href = titleElement?.attr("href")?.trim()
             ?: this.selectFirst("a")?.attr("href")?.trim()
@@ -118,7 +115,7 @@ class AnimeDubHindiProvider : MainAPI() {
         val poster = extractImageUrl(document.selectFirst(".post-thumbnail img, figure.wp-block-image img, .entry-content img, .post-thumb img"))
             ?: document.select("img").mapNotNull { extractImageUrl(it) }.firstOrNull()
         val plot = document.selectFirst(".entry-content p:has(strong)")?.text()
-            ?.replace(Regex("""^(?:Synopsis|Story):s*""", RegexOption.IGNORE_CASE), "")?.trim()
+            ?.replace(Regex("""^(?:Synopsis|Story):\s*""", RegexOption.IGNORE_CASE), "")?.trim()
             ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
         val tags = document.select(".category a, .entry-content li:contains(Genres)").map { it.text().trim() }.distinct()
         val year = Regex("""\b(19\d\d|20\d\d)\b""").find(title)?.value?.toIntOrNull()
@@ -264,14 +261,13 @@ class AnimeDubHindiProvider : MainAPI() {
                         val fileId = Regex("""(?:/u/|/file/)([a-zA-Z0-9]+)""").find(link)?.groupValues?.get(1)
                         if (fileId != null) {
                             callback.invoke(
-                                newExtractorLink(
+                                ExtractorLink(
                                     source = "PixelDrain",
                                     name = "PixelDrain [Fast Cloud]",
                                     url = "https://pixeldrain.com/api/file/$fileId",
-                                    type = ExtractorLinkType.VIDEO
-                                ) {
-                                    this.quality = Qualities.Unknown.value
-                                }
+                                    referer = "",
+                                    quality = Qualities.Unknown.value
+                                )
                             )
                             loadedAny = true
                         }
@@ -283,7 +279,7 @@ class AnimeDubHindiProvider : MainAPI() {
                     }
                 }
             } catch (e: Exception) {
-                // Continue to next mirror
+                // Ignore single mirror failure
             }
         }
 
@@ -293,8 +289,8 @@ class AnimeDubHindiProvider : MainAPI() {
     private suspend fun extractHubCloud(url: String, callback: (ExtractorLink) -> Unit): Boolean {
         return try {
             val initialRes = app.get(url, headers = mapOf("User-Agent" to USER_AGENT)).text
-            val gamerUrl = Regex("""href=["'](https?://gamerxyt\.com/hubcloud\.php[^"']+)["']""").find(initialRes)?.groupValues?.get(1)
-                ?: Regex("""id=["']download["'][^>]+href=["']([^"']+)["']""").find(initialRes)?.groupValues?.get(1)
+            val gamerUrl = Regex("""href=[\"'](https?://gamerxyt\\.com/hubcloud\\.php[^\"']+)[\"']""").find(initialRes)?.groupValues?.get(1)
+                ?: Regex("""id=[\"']download[\"'][^>]+href=[\"']([^\"']+)[\"']""").find(initialRes)?.groupValues?.get(1)
                 ?: return false
 
             val finalDoc = app.get(
@@ -311,14 +307,13 @@ class AnimeDubHindiProvider : MainAPI() {
             val r2Href = finalDoc.selectFirst("a[href*='r2.cloudflarestorage.com'], a#fsl")?.attr("href")
             if (!r2Href.isNullOrBlank()) {
                 callback.invoke(
-                    newExtractorLink(
+                    ExtractorLink(
                         source = "HubCloud",
                         name = "HubCloud [FSL High-Speed CDN]",
                         url = r2Href,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.quality = Qualities.Unknown.value
-                    }
+                        referer = "",
+                        quality = Qualities.Unknown.value
+                    )
                 )
                 found = true
             }
@@ -327,14 +322,13 @@ class AnimeDubHindiProvider : MainAPI() {
             val gpdlHref = finalDoc.selectFirst("a[href*='gpdl.hubcloud.ist']")?.attr("href")
             if (!gpdlHref.isNullOrBlank()) {
                 callback.invoke(
-                    newExtractorLink(
+                    ExtractorLink(
                         source = "HubCloud",
                         name = "HubCloud [Server : 10Gbps]",
                         url = gpdlHref,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.quality = Qualities.Unknown.value
-                    }
+                        referer = "",
+                        quality = Qualities.Unknown.value
+                    )
                 )
                 found = true
             }
@@ -345,14 +339,13 @@ class AnimeDubHindiProvider : MainAPI() {
                 val pxlId = Regex("""(?:/u/|/file/)([a-zA-Z0-9]+)""").find(pxlHref)?.groupValues?.get(1)
                 if (pxlId != null) {
                     callback.invoke(
-                        newExtractorLink(
+                        ExtractorLink(
                             source = "HubCloud",
                             name = "HubCloud [PixelDrain Mirror]",
                             url = "https://pixeldrain.com/api/file/$pxlId",
-                            type = ExtractorLinkType.VIDEO
-                        ) {
-                            this.quality = Qualities.Unknown.value
-                        }
+                            referer = "",
+                            quality = Qualities.Unknown.value
+                        )
                     )
                     found = true
                 }
@@ -372,14 +365,13 @@ class AnimeDubHindiProvider : MainAPI() {
             val r2Href = doc.selectFirst("a[href*='r2.dev']")?.attr("href")
             if (!r2Href.isNullOrBlank()) {
                 callback.invoke(
-                    newExtractorLink(
+                    ExtractorLink(
                         source = "GDFlix",
                         name = "GDFlix [R2 Direct Stream]",
                         url = r2Href,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.quality = Qualities.Unknown.value
-                    }
+                        referer = "",
+                        quality = Qualities.Unknown.value
+                    )
                 )
                 found = true
             }
@@ -387,14 +379,13 @@ class AnimeDubHindiProvider : MainAPI() {
             val instantHref = doc.selectFirst("a[href*='instant.busycdn.xyz'], a[href*='busycdn']")?.attr("href")
             if (!instantHref.isNullOrBlank()) {
                 callback.invoke(
-                    newExtractorLink(
+                    ExtractorLink(
                         source = "GDFlix",
                         name = "GDFlix [Instant CDN]",
                         url = instantHref,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        this.quality = Qualities.Unknown.value
-                    }
+                        referer = "",
+                        quality = Qualities.Unknown.value
+                    )
                 )
                 found = true
             }
@@ -406,7 +397,7 @@ class AnimeDubHindiProvider : MainAPI() {
     }
 
     data class EpisodeData(
-        @JsonProperty("title") val title: String? = null,
-        @JsonProperty("links") val links: List<String>? = null
+        val title: String? = null,
+        val links: List<String>? = null
     )
 }
