@@ -16,6 +16,10 @@ PLUGIN_META = {
     'GogoanimePlugin': {
         'name': 'Gogoanime',
         'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
+    },
+    'YoutubePlugin': {
+        'name': 'YouTube',
+        'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png'
     }
 }
 
