@@ -20,6 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -59,31 +60,72 @@ jobs:
             gradle make makePluginsJson --stacktrace || gradle make --stacktrace
           fi
 
-      - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
+      - name: Execute Plugin Updater & Ensure Real Metadata, Hashes & Catalog
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          cat << 'PYEOF' > /tmp/update_plugins.py
+          if [ -f "plugin_update.py" ]; then
+            python3 plugin_update.py
+          else
+            cat << 'PYEOF' > /tmp/update_plugins.py
           import json, glob, zipfile, os, hashlib
 
+          REPO = os.environ.get("GITHUB_REPOSITORY", "error-898-15/Allanime_repo")
+
           PLUGIN_META = {
+              'AnimeDubHindiPlugin': {
+                  'name': 'Anime Dub Hindi',
+                  'description': 'AnimeDubHindi - Watch Hindi, Tamil, Telugu, and Multi-Audio Anime & Movies with High-Speed Direct Cloud CDN (HubCloud & GDFlix)',
+                  'language': 'hi',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Anime', 'AnimeMovie', 'Movie', 'TvSeries'],
+                  'iconUrl': 'https://www.animedubhindi.link/wp-content/uploads/2024/07/Untitled-design.png',
+                  'status': 1
+              },
               'BlakitePlugin': {
                   'name': 'Blakite Anime',
-                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+                  'description': 'Blakite Provider - Stream Hindi Dubbed Anime & Cartoons directly via Blakite network',
+                  'language': 'hi',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Anime', 'AnimeMovie', 'Cartoon'],
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937',
+                  'status': 1
               },
               'AnimeSaltPlugin': {
                   'name': 'AnimeSalt',
-                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
+                  'description': 'AnimeSalt Provider - Watch high quality subbed and dubbed anime releases',
+                  'language': 'en',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Anime', 'AnimeMovie', 'OVA'],
+                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png',
+                  'status': 1
               },
               'GogoanimePlugin': {
                   'name': 'Gogoanime',
-                  'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
+                  'description': 'Gogoanime Provider - Fast video streams for the latest seasonal anime episodes',
+                  'language': 'en',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Anime', 'AnimeMovie', 'OVA'],
+                  'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png',
+                  'status': 1
               },
               'YoutubePlugin': {
                   'name': 'YouTube',
-                  'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png'
+                  'description': 'YouTube - Stream trending videos, music, gaming, news, and official channels directly on CloudStream',
+                  'language': 'en',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Others', 'Live', 'TvSeries'],
+                  'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png',
+                  'status': 1
               },
               'VidSrcPlugin': {
                   'name': 'VidSrc',
-                  'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
+                  'description': 'VidSrc (https://vidsrc.sbs/) - Watch Movies & TV Series in HD with multi-server playback (Pro Multi, CineSrc, Videasy 4K, VidSrc)',
+                  'language': 'en',
+                  'authors': ['error-898-15'],
+                  'tvTypes': ['Movie', 'TvSeries'],
+                  'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png',
+                  'status': 1
               }
           }
 
@@ -98,8 +140,10 @@ jobs:
                       for plugin_key, meta in PLUGIN_META.items():
                           if plugin_key.lower() in base.lower() or manifest.get('internalName', '').lower() == plugin_key.lower():
                               manifest['name'] = meta['name']
-                              if 'iconUrl' in meta:
-                                  manifest['iconUrl'] = meta['iconUrl']
+                              manifest['iconUrl'] = meta['iconUrl']
+                              manifest['description'] = meta['description']
+                              manifest['language'] = meta['language']
+                              manifest['tvTypes'] = meta['tvTypes']
                       items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
                       with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
                           for name, data in items.items():
@@ -124,6 +168,9 @@ jobs:
                               if iname.lower() == plugin_key.lower() or plugin_key.lower() in item.get('url', '').lower():
                                   item['name'] = meta['name']
                                   item['iconUrl'] = meta['iconUrl']
+                                  item['description'] = meta['description']
+                                  item['language'] = meta['language']
+                                  item['tvTypes'] = meta['tvTypes']
                           for base, (h, sz) in cs3_hashes.items():
                               if base in item.get('url', '') or iname in base:
                                   item['fileHash'] = h
@@ -133,9 +180,7 @@ jobs:
                   except Exception as e:
                       print('Warning on pjson:', e)
           PYEOF
-          python3 /tmp/update_plugins.py
-          if [ -f ".github/scripts/update_plugins.py" ]; then
-            python3 .github/scripts/update_plugins.py || true
+            python3 /tmp/update_plugins.py
           fi
 
       - name: Verify Output Artifacts
