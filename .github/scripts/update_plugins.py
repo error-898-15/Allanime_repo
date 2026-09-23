@@ -20,6 +20,10 @@ PLUGIN_META = {
     'YoutubePlugin': {
         'name': 'YouTube',
         'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png'
+    },
+    'VidSrcPlugin': {
+        'name': 'VidSrc',
+        'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
     }
 }
 
