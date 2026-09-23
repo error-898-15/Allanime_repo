@@ -24,10 +24,6 @@ PLUGIN_META = {
     'VidSrcPlugin': {
         'name': 'VidSrc',
         'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
-    },
-    'Just4AnimePlugin': {
-        'name': 'Just4Anime',
-        'iconUrl': 'https://just4anime.online/apple-touch-icon.png'
     }
 }
 
@@ -50,6 +46,7 @@ for cs3_file in glob.glob('**/*.cs3', recursive=True):
                     zout.writestr(name, data)
     except Exception as e:
         print(f"Warning processing {cs3_file}: {e}")
+
     try:
         with open(cs3_file, 'rb') as f:
             content = f.read()
