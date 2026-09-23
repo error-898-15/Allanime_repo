@@ -20,7 +20,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -44,40 +43,99 @@ jobs:
         with:
           gradle-version: "8.12"
 
-      - name: Prepare Gradlew Permissions & Clean Manifests
+      - name: Normalize Manifests & Prepare Environment
         run: |
-          chmod +x gradlew || true
           find . -name "AndroidManifest.xml" -exec sed -i 's/package="[^"]*"//g' {} +
           echo "Environment ready."
 
-      - name: Build Plugins
+      - name: Build Plugins & Manifests
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew make --stacktrace || gradle make --stacktrace
+          if [ -f "gradlew" ] && [ -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            chmod +x gradlew
+            ./gradlew make makePluginsJson --stacktrace || ./gradlew make --stacktrace
           else
-            gradle make --stacktrace
+            gradle make makePluginsJson --stacktrace || gradle make --stacktrace
           fi
 
-      - name: Generate plugins.json Catalog
+      - name: Ensure Real Plugin Names, Official Logos & Valid Hashes
         run: |
-          if [ -f "gradlew" ]; then
-            ./gradlew makePluginsJson --stacktrace || true
-          else
-            gradle makePluginsJson --stacktrace || true
-          fi
+          cat << 'PYEOF' > /tmp/update_plugins.py
+          import json, glob, zipfile, os, hashlib
 
-      - name: Run Plugin Updater & Sync Catalog
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          if [ -f "plugin_update.py" ]; then
-            python3 plugin_update.py
-          elif [ -f ".github/scripts/plugin_update.py" ]; then
-            python3 .github/scripts/plugin_update.py
-          else
-            echo "plugin_update.py not found, proceeding with built plugins."
+          PLUGIN_META = {
+              'BlakitePlugin': {
+                  'name': 'Blakite Anime',
+                  'iconUrl': 'https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937'
+              },
+              'AnimeSaltPlugin': {
+                  'name': 'AnimeSalt',
+                  'iconUrl': 'https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png'
+              },
+              'GogoanimePlugin': {
+                  'name': 'Gogoanime',
+                  'iconUrl': 'https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png'
+              },
+              'YoutubePlugin': {
+                  'name': 'YouTube',
+                  'iconUrl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png'
+              },
+              'VidSrcPlugin': {
+                  'name': 'VidSrc',
+                  'iconUrl': 'https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png'
+              }
+          }
+
+          cs3_hashes = {}
+          for cs3_file in glob.glob('**/*.cs3', recursive=True):
+              base = os.path.basename(cs3_file)
+              try:
+                  with zipfile.ZipFile(cs3_file, 'r') as zin:
+                      items = {name: zin.read(name) for name in zin.namelist()}
+                  if 'manifest.json' in items:
+                      manifest = json.loads(items['manifest.json'].decode('utf-8'))
+                      for plugin_key, meta in PLUGIN_META.items():
+                          if plugin_key.lower() in base.lower() or manifest.get('internalName', '').lower() == plugin_key.lower():
+                              manifest['name'] = meta['name']
+                              if 'iconUrl' in meta:
+                                  manifest['iconUrl'] = meta['iconUrl']
+                      items['manifest.json'] = json.dumps(manifest, indent=2).encode('utf-8')
+                      with zipfile.ZipFile(cs3_file, 'w', zipfile.ZIP_DEFLATED) as zout:
+                          for name, data in items.items():
+                              zout.writestr(name, data)
+
+                  with open(cs3_file, 'rb') as f:
+                      content = f.read()
+                  h = 'sha256-' + hashlib.sha256(content).hexdigest()
+                  sz = len(content)
+                  cs3_hashes[base] = (h, sz)
+              except Exception as e:
+                  print('Warning on cs3:', e)
+
+          for pjson in ['build/plugins.json', 'plugins.json']:
+              if os.path.exists(pjson):
+                  try:
+                      with open(pjson, 'r') as f:
+                          data = json.load(f)
+                      for item in data:
+                          iname = item.get('internalName', '')
+                          for plugin_key, meta in PLUGIN_META.items():
+                              if iname.lower() == plugin_key.lower() or plugin_key.lower() in item.get('url', '').lower():
+                                  item['name'] = meta['name']
+                                  item['iconUrl'] = meta['iconUrl']
+                          for base, (h, sz) in cs3_hashes.items():
+                              if base in item.get('url', '') or iname in base:
+                                  item['fileHash'] = h
+                                  item['fileSize'] = sz
+                      with open(pjson, 'w') as f:
+                          json.dump(data, f, indent=2)
+                  except Exception as e:
+                      print('Warning on pjson:', e)
+          PYEOF
+          python3 /tmp/update_plugins.py
+          if [ -f ".github/scripts/update_plugins.py" ]; then
+            python3 .github/scripts/update_plugins.py || true
           fi
 
       - name: Verify Output Artifacts
@@ -105,11 +163,9 @@ jobs:
           if-no-files-found: warn
 
       - name: Deploy to Builds Branch
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
           git checkout -B builds
           find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
           if [ -d "$RUNNER_TEMP/build_artifacts" ]; then
@@ -120,5 +176,5 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "Automated build: ${{ github.sha }}"
-            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" builds --force
+            git push origin builds --force
           fi
