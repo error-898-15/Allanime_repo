@@ -66,23 +66,20 @@ class VidSrcProvider : MainAPI() {
                     val title = if (isTv) item.path("name").asText("Untitled") else item.path("title").asText("Untitled")
                     val posterPath = item.path("poster_path").asText("")
                     val poster = if (posterPath.isNotBlank()) "$TMDB_IMG$posterPath" else null
-                    val score = item.path("vote_average").asDouble(0.0)
 
                     if (isTv) {
                         items.add(newTvSeriesSearchResponse(title, "$mainUrl/tv/$id", TvType.TvSeries) {
                             this.posterUrl = poster
-                            this.rating = (score * 10).toInt()
                         })
                     } else {
                         items.add(newMovieSearchResponse(title, "$mainUrl/movie/$id", TvType.Movie) {
                             this.posterUrl = poster
-                            this.rating = (score * 10).toInt()
                         })
                     }
                 }
             }
             newHomePageResponse(request.name, items)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             newHomePageResponse(request.name, emptyList())
         }
     }
@@ -110,23 +107,20 @@ class VidSrcProvider : MainAPI() {
                     val title = if (isTv) item.path("name").asText("Untitled") else item.path("title").asText("Untitled")
                     val posterPath = item.path("poster_path").asText("")
                     val poster = if (posterPath.isNotBlank()) "$TMDB_IMG$posterPath" else null
-                    val score = item.path("vote_average").asDouble(0.0)
 
                     if (isTv) {
                         items.add(newTvSeriesSearchResponse(title, "$mainUrl/tv/$id", TvType.TvSeries) {
                             this.posterUrl = poster
-                            this.rating = (score * 10).toInt()
                         })
                     } else {
                         items.add(newMovieSearchResponse(title, "$mainUrl/movie/$id", TvType.Movie) {
                             this.posterUrl = poster
-                            this.rating = (score * 10).toInt()
                         })
                     }
                 }
             }
             items
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             emptyList()
         }
     }
@@ -151,7 +145,6 @@ class VidSrcProvider : MainAPI() {
         val backdrop = if (backdropPath.isNotBlank()) "$TMDB_IMG$backdropPath" else null
         val releaseDate = if (isTv) json.path("first_air_date").asText("") else json.path("release_date").asText("")
         val year = if (releaseDate.length >= 4) releaseDate.substring(0, 4).toIntOrNull() else null
-        val rating = (json.path("vote_average").asDouble(0.0) * 10).toInt()
         val imdbId = json.path("external_ids").path("imdb_id").asText("")
 
         val genres = mutableListOf<String>()
@@ -195,7 +188,7 @@ class VidSrcProvider : MainAPI() {
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {}
             }
 
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
@@ -204,7 +197,6 @@ class VidSrcProvider : MainAPI() {
                 this.year = year
                 this.plot = plot
                 this.tags = genres
-                this.rating = rating
             }
         } else {
             val payload = "{\"type\":\"movie\",\"tmdbId\":\"$id\",\"imdbId\":\"$imdbId\"}"
@@ -215,7 +207,6 @@ class VidSrcProvider : MainAPI() {
                 this.year = year
                 this.plot = plot
                 this.tags = genres
-                this.rating = rating
             }
         }
     }
@@ -228,7 +219,7 @@ class VidSrcProvider : MainAPI() {
     ): Boolean {
         val dataNode = try {
             mapper.readTree(data)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             return false
         }
 
@@ -244,13 +235,9 @@ class VidSrcProvider : MainAPI() {
         val serverList = mutableListOf<String>()
 
         if (isTv) {
-            // Pro Multi (vidsrc.sbs primary)
             serverList.add("https://web.nxsha.app/embed/tv/$tmdbId/$season/$episode?server=AwsPly-[Multi-Lang]")
-            // CineSrc HD
             serverList.add("https://cinesrc.st/embed/tv/$tmdbId?s=$season&e=$episode&color=FF1493&autoplay=true&autonext=true")
-            // Videasy 4K
             serverList.add("https://player.videasy.net/tv/$tmdbId/$season/$episode")
-            // VidSrc.to Embed
             serverList.add("https://vidsrc.to/embed/tv/$tmdbId/$season/$episode")
             if (imdbId.isNotBlank()) {
                 serverList.add("https://vidsrc.me/embed/tv?imdb=$imdbId&season=$season&episode=$episode")
@@ -263,13 +250,9 @@ class VidSrcProvider : MainAPI() {
             serverList.add("https://vidsrc.vip/embed/tv/$tmdbId/$season/$episode")
             serverList.add("https://vidsrc.sbs/embed/tv/$tmdbId/$season/$episode")
         } else {
-            // Pro Multi (vidsrc.sbs primary)
             serverList.add("https://web.nxsha.app/embed/movie/$tmdbId?server=AwsPly-[Multi-Lang]")
-            // CineSrc HD
             serverList.add("https://cinesrc.st/embed/movie/$tmdbId")
-            // Videasy 4K
             serverList.add("https://player.videasy.net/movie/$tmdbId")
-            // VidSrc.to Embed
             serverList.add("https://vidsrc.to/embed/movie/$tmdbId")
             if (imdbId.isNotBlank()) {
                 serverList.add("https://vidsrc.me/embed/movie?imdb=$imdbId")
@@ -290,7 +273,7 @@ class VidSrcProvider : MainAPI() {
                 if (loadExtractor(embedUrl, mainUrl, subtitleCallback, callback)) {
                     foundLinks = true
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
 
         return foundLinks
