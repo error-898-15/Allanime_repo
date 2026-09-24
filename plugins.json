@@ -17,7 +17,9 @@
     ],
     "language": "hi",
     "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3"
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3",
+    "fileHash": "sha256-4ccc0cba0226a0df619a16136c01358ab71c82ecf8e9db5c2f8f605706e01f3a",
+    "fileSize": 27645
   },
   {
     "name": "iStreamFlare",
@@ -57,7 +59,9 @@
     ],
     "language": "en",
     "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/GogoanimePlugin.cs3"
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/GogoanimePlugin.cs3",
+    "fileHash": "sha256-d95295fb97e864058b9439370250630f8714e171e3e123dd11648a08a30fceb8",
+    "fileSize": 22568
   },
   {
     "name": "YouTube",
@@ -75,6 +79,8 @@
     ],
     "language": "en",
     "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png",
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/YoutubePlugin.cs3"
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/YoutubePlugin.cs3",
+    "fileHash": "sha256-32630648ca07759712b1c131201d4f727f55d89cc600799e8af0c1a9bab36e22",
+    "fileSize": 11082
   }
-    ]
+]
