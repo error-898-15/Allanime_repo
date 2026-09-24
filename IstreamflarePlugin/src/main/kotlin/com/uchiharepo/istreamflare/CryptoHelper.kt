@@ -23,7 +23,15 @@ object CryptoHelper {
             KEY_LENGTH
         )
         val secret = factory.generateSecret(spec)
-        SecretKeySpec(secret.encoded, "AES")
+        SecretKeySpec(secret.encoded ?: ByteArray(0), "AES")
+    }
+
+    private fun decodeBase64(str: String): ByteArray {
+        return try {
+            Base64.decode(str, Base64.DEFAULT)
+        } catch (e: Throwable) {
+            java.util.Base64.getDecoder().decode(str)
+        }
     }
 
     /**
@@ -31,11 +39,10 @@ object CryptoHelper {
      * Payload structure: [0..11: IV (12 bytes)][12..27: Auth Tag (16 bytes)][28..end: Ciphertext]
      */
     fun decrypt(encryptedBase64: String): String {
-        val raw = Base64.decode(encryptedBase64, Base64.DEFAULT)
+        val raw = decodeBase64(encryptedBase64)
         if (raw.size < 28) {
             throw IllegalArgumentException("Invalid encrypted payload size: ${raw.size}")
         }
-
         val iv = raw.copyOfRange(0, 12)
         val tag = raw.copyOfRange(12, 28)
         val cipherText = raw.copyOfRange(28, raw.size)
@@ -48,7 +55,6 @@ object CryptoHelper {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, GCMParameterSpec(128, iv))
         val decryptedBytes = cipher.doFinal(combined)
-
         return String(decryptedBytes, StandardCharsets.UTF_8)
     }
 }
