@@ -66,15 +66,15 @@ class AnimeHDProvider : MainAPI() {
         try {
             val html = app.get(url, headers = defaultHeaders).text
             val doc = Jsoup.parse(html)
-            
+
             val cards = doc.select(".animahd-card, article.post, .top10-post")
             for (card in cards) {
                 val href = card.selectFirst("a")?.attr("href") ?: card.attr("href")
                 if (href.isBlank()) continue
-                
+
                 val title = card.selectFirst(".animahd-card-title, .article__title a, .entry-title, h2, h3")?.text()?.trim()
                     ?: card.attr("title").ifBlank { "Featured Anime" }
-                
+
                 val poster = card.selectFirst("img")?.let { img ->
                     img.attr("src").ifBlank { img.attr("data-src") }
                 }
@@ -119,7 +119,7 @@ class AnimeHDProvider : MainAPI() {
         return results
     }
 
-    override suspend fun load(url: String): LoadResponse {
+    override suspend fun load(url: String): LoadResponse? {
         val html = app.get(url, headers = defaultHeaders).text
         val doc = Jsoup.parse(html)
 
@@ -144,8 +144,8 @@ class AnimeHDProvider : MainAPI() {
             val seasonName = el.attr("data-season").ifBlank { "Season 1" }
             val seasonNum = Regex("""\d+""").find(seasonName)?.value?.toIntOrNull() ?: 1
 
-            var fileId = el.selectFirst(".gdrive-ep-meta")?.attr("data-fileid")
-                ?: el.attr("data-fileid")
+            var fileId: String? = el.selectFirst(".gdrive-ep-meta")?.attr("data-fileid")?.ifBlank { null }
+                ?: el.attr("data-fileid").ifBlank { null }
 
             if (fileId.isNullOrBlank() && rawHref.contains("p=")) {
                 try {
@@ -161,15 +161,16 @@ class AnimeHDProvider : MainAPI() {
 
             if (fileId.isNullOrBlank()) continue
 
+            val id = fileId
             val epTitle = el.selectFirst(".gdrive-ep-meta div:first-child, .ff-ep-row-title")?.text()?.trim()
                 ?: "Episode $epCounter"
 
             val epNum = Regex("""(?i)(?:E|Episode)\s*(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
                 ?: epCounter
 
-            val epThumb = "https://drive.google.com/thumbnail?id=$fileId&sz=w400"
+            val epThumb = "https://drive.google.com/thumbnail?id=$id&sz=w400"
 
-            episodesList.add(newEpisode("$mainUrl/player/?file_id=$fileId") {
+            episodesList.add(newEpisode("$mainUrl/player/?file_id=$id") {
                 this.name = epTitle
                 this.season = seasonNum
                 this.episode = epNum
@@ -248,8 +249,9 @@ class AnimeHDProvider : MainAPI() {
 
         // SERVER 3: CloudStream Built-In Google Drive Extractor
         try {
-            loadExtractor("https://drive.google.com/file/d/$fileId/preview", subtitleCallback, callback)
-            foundLink = true
+            if (loadExtractor("https://drive.google.com/file/d/$fileId/preview", "https://drive.google.com/", subtitleCallback, callback)) {
+                foundLink = true
+            }
         } catch (e: Exception) {}
 
         // SERVER 4: AnimaHD Secure Player Destination
