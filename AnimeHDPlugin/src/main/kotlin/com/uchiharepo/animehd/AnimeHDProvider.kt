@@ -1,13 +1,14 @@
 package com.uchiharepo.animehd
 
+import android.util.Base64
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.Jsoup
 import java.net.URLEncoder
-import java.util.Base64
 
 class AnimeHDProvider : MainAPI() {
     override var name = "AnimeHD"
@@ -17,8 +18,13 @@ class AnimeHDProvider : MainAPI() {
     override val hasMainPage = true
     override val hasDownloadSupport = true
 
+    companion object {
+        const val USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+
     private val defaultHeaders = mapOf(
-        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent" to USER_AGENT,
         "Referer" to "https://animahd.com/",
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language" to "en-US,en;q=0.9"
@@ -37,12 +43,12 @@ class AnimeHDProvider : MainAPI() {
         return try {
             if (rawUrl.contains("p=")) {
                 val b64 = rawUrl.substringAfter("p=").substringBefore("&")
-                val decoded = String(Base64.getUrlDecoder().decode(b64.replace("&#038;", "&")), Charsets.UTF_8)
+                val decoded = String(Base64.decode(b64.replace("&#038;", "&"), Base64.DEFAULT), Charsets.UTF_8)
                 if (decoded.startsWith("http")) decoded else fixUrl(rawUrl)
             } else {
                 fixUrl(rawUrl)
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             fixUrl(rawUrl)
         }
     }
@@ -78,13 +84,13 @@ class AnimeHDProvider : MainAPI() {
                     this.posterUrl = poster
                 })
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
         return newHomePageResponse(request.name, items)
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encQuery = URLEncoder.encode(query, "UTF-8")
+        val encQuery = URLEncoder.encode(query.trim(), "UTF-8")
         val searchUrl = "$mainUrl/?s=$encQuery"
         val results = mutableListOf<SearchResponse>()
 
@@ -108,7 +114,7 @@ class AnimeHDProvider : MainAPI() {
                     this.posterUrl = poster
                 })
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
         return results
     }
@@ -144,9 +150,9 @@ class AnimeHDProvider : MainAPI() {
             if (fileId.isNullOrBlank() && rawHref.contains("p=")) {
                 try {
                     val b64 = rawHref.substringAfter("p=").substringBefore("&")
-                    val decoded = String(Base64.getUrlDecoder().decode(b64.replace("&#038;", "&")), Charsets.UTF_8)
+                    val decoded = String(Base64.decode(b64.replace("&#038;", "&"), Base64.DEFAULT), Charsets.UTF_8)
                     fileId = Regex("""file_id=([a-zA-Z0-9_-]+)""").find(decoded)?.groupValues?.get(1)
-                } catch (_: Exception) {}
+                } catch (e: Exception) {}
             }
 
             if (fileId.isNullOrBlank()) {
@@ -206,70 +212,73 @@ class AnimeHDProvider : MainAPI() {
 
         var foundLink = false
 
-        // SERVER 1: Direct 1080p Stream (Google UserContent) - Bypasses Worker 401 & "Stream Locked" Image
+        // SERVER 1: Fast Direct 1080p Stream (Google UserContent)
         try {
             val directStreamUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = "$name · Google Drive Direct [1080p]",
                     url = directStreamUrl,
-                    referer = "https://drive.google.com/",
-                    quality = Qualities.P1080.value,
                     type = ExtractorLinkType.VIDEO
-                )
+                ) {
+                    this.referer = "https://drive.google.com/"
+                    this.quality = Qualities.P1080.value
+                }
             )
             foundLink = true
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
         // SERVER 2: UC Direct Stream (High Compatibility Mirror)
         try {
             val ucStreamUrl = "https://drive.google.com/uc?id=$fileId&export=download"
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = "$name · Fast Stream Mirror",
                     url = ucStreamUrl,
-                    referer = "https://drive.google.com/",
-                    quality = Qualities.P720.value,
                     type = ExtractorLinkType.VIDEO
-                )
+                ) {
+                    this.referer = "https://drive.google.com/"
+                    this.quality = Qualities.P720.value
+                }
             )
             foundLink = true
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
         // SERVER 3: CloudStream Built-In Google Drive Extractor
         try {
             loadExtractor("https://drive.google.com/file/d/$fileId/preview", subtitleCallback, callback)
             foundLink = true
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
-        // SERVER 4: AnimaHD Secure Destination Player
+        // SERVER 4: AnimaHD Secure Player Destination
         try {
             val destUrl = "https://youranimewatchingdestination.animahd.online/?id=$fileId"
             val destHtml = app.get(
                 destUrl,
                 headers = mapOf(
                     "Referer" to "$mainUrl/",
-                    "User-Agent" to defaultHeaders["User-Agent"]!!
+                    "User-Agent" to USER_AGENT
                 )
             ).text
 
             val srcMatch = Regex("""<source[^>]+src=['"]([^'"]+)['"]""").find(destHtml)?.groupValues?.get(1)
             if (!srcMatch.isNullOrBlank() && !srcMatch.contains("error")) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = name,
                         name = "$name · AnimaHD Worker Stream",
                         url = srcMatch,
-                        referer = "https://youranimewatchingdestination.animahd.online/",
-                        quality = Qualities.P1080.value,
                         type = ExtractorLinkType.VIDEO
-                    )
+                    ) {
+                        this.referer = "https://youranimewatchingdestination.animahd.online/"
+                        this.quality = Qualities.P1080.value
+                    }
                 )
                 foundLink = true
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
 
         return foundLink
     }
