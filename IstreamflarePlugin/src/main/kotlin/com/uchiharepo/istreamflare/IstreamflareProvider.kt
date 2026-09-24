@@ -4,10 +4,10 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 
 class IstreamflareProvider : MainAPI() {
     override var mainUrl = "https://desi.hippitunes.pro/android"
@@ -49,7 +49,7 @@ class IstreamflareProvider : MainAPI() {
         @JsonProperty("poster") val poster: String? = null,
         @JsonProperty("banner") val banner: String? = null,
         @JsonProperty("youtube_trailer") val youtubeTrailer: String? = null,
-        @JsonProperty("content_type") val contentType: String? = null, // "1" = Movie, "2" = WebSeries
+        @JsonProperty("content_type") val contentType: String? = null,
         @JsonProperty("custom_tag") val customTag: CustomTag? = null
     )
 
@@ -128,16 +128,15 @@ class IstreamflareProvider : MainAPI() {
             return null
         }
         val homeList = items.map { it.toSearchResponse() }
-
-        return newHomePageResponse(
-            HomePageList(
-                name = request.name,
-                list = homeList,
-                isHorizontalImages = request.data == "getMovieImageSlider"
-            ),
-            hasNext = false
+        val section = HomePageList(
+            name = request.name,
+            list = homeList,
+            isHorizontalImages = request.data == "getMovieImageSlider"
         )
+        return newHomePageResponse(listOf(section), hasNext = false)
     }
+
+    override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
         val encodedQuery = query.trim()
@@ -162,19 +161,16 @@ class IstreamflareProvider : MainAPI() {
                 return null
             }
 
-            newMovieLoadResponse(
-                name = movie.name,
-                url = url,
-                type = TvType.Movie,
-                dataUrl = id
-            ) {
+            newMovieLoadResponse(movie.name, url, TvType.Movie, id) {
                 this.posterUrl = movie.poster ?: movie.banner
                 this.backgroundPosterUrl = movie.banner ?: movie.poster
                 this.plot = movie.description
                 this.year = movie.releaseDate?.take(4)?.toIntOrNull()
                 this.tags = movie.genres?.split(",")?.map { it.trim() }
-                this.duration = movie.runtime?.filter { it.isDigit() }?.toIntOrNull()
-                addTrailer(movie.youtubeTrailer)
+                movie.youtubeTrailer?.takeIf { it.isNotBlank() }?.let { trailer ->
+                    val trailerUrl = if (trailer.startsWith("http")) trailer else "https://www.youtube.com/watch?v=$trailer"
+                    addTrailer(trailerUrl)
+                }
             }
         } else {
             val detailsDecrypted = apiGet("getWebSeriesDetails/$id") ?: return null
@@ -211,30 +207,28 @@ class IstreamflareProvider : MainAPI() {
                             name = ep.episodeName
                         )
                     )
+
                     episodes.add(
                         newEpisode(passData) {
                             this.name = ep.episodeName
                             this.season = sOrder
                             this.episode = ep.episodeOrder?.toIntOrNull()
                             this.posterUrl = ep.episodeImage ?: series.poster
-                            this.description = ep.episodeDescription
                         }
                     )
                 }
             }
 
-            newTvSeriesLoadResponse(
-                name = series.name,
-                url = url,
-                type = TvType.TvSeries,
-                episodes = episodes
-            ) {
+            newTvSeriesLoadResponse(series.name, url, TvType.TvSeries, episodes) {
                 this.posterUrl = series.poster ?: series.banner
                 this.backgroundPosterUrl = series.banner ?: series.poster
                 this.plot = series.description
                 this.year = series.releaseDate?.take(4)?.toIntOrNull()
                 this.tags = series.genres?.split(",")?.map { it.trim() }
-                addTrailer(series.youtubeTrailer)
+                series.youtubeTrailer?.takeIf { it.isNotBlank() }?.let { trailer ->
+                    val trailerUrl = if (trailer.startsWith("http")) trailer else "https://www.youtube.com/watch?v=$trailer"
+                    addTrailer(trailerUrl)
+                }
             }
         }
     }
@@ -328,14 +322,8 @@ class IstreamflareProvider : MainAPI() {
         val loadUrl = if (isSeries) "series/$id" else "movie/$id"
         val tvType = if (isSeries) TvType.TvSeries else TvType.Movie
 
-        return if (isSeries) {
-            newTvSeriesSearchResponse(name, loadUrl, tvType) {
-                this.posterUrl = poster ?: banner
-            }
-        } else {
-            newMovieSearchResponse(name, loadUrl, tvType) {
-                this.posterUrl = poster ?: banner
-            }
+        return newMovieSearchResponse(name, loadUrl, tvType) {
+            this.posterUrl = poster ?: banner
         }
     }
 }
