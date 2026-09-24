@@ -11,6 +11,8 @@ import org.jsoup.Jsoup
 import java.net.URLEncoder
 
 class AnimeHDProvider : MainAPI() {
+
+    // Provider Information
     override var name = "AnimeHD"
     override var mainUrl = "https://animahd.com"
     override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.Movie, TvType.TvSeries)
@@ -21,8 +23,11 @@ class AnimeHDProvider : MainAPI() {
     companion object {
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        const val DEST_ORIGIN =
+            "https://youranimewatchingdestination.animahd.online"
     }
 
+    // Standard high-compatibility browser headers to bypass Cloudflare / Referer locks
     private val defaultHeaders = mapOf(
         "User-Agent" to USER_AGENT,
         "Referer" to "https://animahd.com/",
@@ -31,61 +36,63 @@ class AnimeHDProvider : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "" to "Trending & Latest Episodes",
-        "category/hindi-dub" to "Hindi Dubbed & Multi-Audio",
-        "category/action" to "Action & Adventure",
-        "category/fantasy" to "Fantasy & Supernatural",
-        "category/drama" to "Drama & Psychological",
-        "category/romance" to "Romance & Slice of Life"
+        "$mainUrl/category/action/" to "Action Anime",
+        "$mainUrl/category/adventure/" to "Adventure Anime",
+        "$mainUrl/category/comedy/" to "Comedy Anime",
+        "$mainUrl/category/fantasy/" to "Fantasy Anime",
+        "$mainUrl/category/isekai/" to "Isekai Series",
+        "$mainUrl/category/sci-fi/" to "Sci-Fi Anime",
+        "$mainUrl/category/romance/" to "Romance Anime",
+        "$mainUrl/category/shounen/" to "Shounen Series",
+        "$mainUrl/category/supernatural/" to "Supernatural Anime"
     )
 
-    private fun resolveCleanUrl(rawUrl: String): String {
-        return try {
-            if (rawUrl.contains("p=")) {
-                val b64 = rawUrl.substringAfter("p=").substringBefore("&")
-                val decoded = String(Base64.decode(b64.replace("&#038;", "&"), Base64.DEFAULT), Charsets.UTF_8)
-                if (decoded.startsWith("http")) decoded else fixUrl(rawUrl)
-            } else {
-                fixUrl(rawUrl)
-            }
-        } catch (e: Exception) {
-            fixUrl(rawUrl)
+    private fun resolveCleanUrl(url: String): String {
+        if (url.contains("p=")) {
+            try {
+                val b64 = url.substringAfter("p=").substringBefore("&").replace("&#038;", "&")
+                val decoded = String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8)
+                if (decoded.startsWith("http")) return decoded
+            } catch (e: Exception) {}
+        }
+        return if (url.startsWith("http")) url else "$mainUrl$url"
+    }
+
+    private fun extractPoster(card: org.jsoup.nodes.Element): String? {
+        val styleAttr = card.selectFirst(".animahd-poster, [style*='background-image']")?.attr("style") ?: card.attr("style")
+        if (styleAttr.isNotBlank()) {
+            val bgUrl = Regex("""url\(['"]?([^'"\)]+)['"]?\)""").find(styleAttr)?.groupValues?.get(1)
+            if (!bgUrl.isNullOrBlank()) return bgUrl
+        }
+        return card.selectFirst("img")?.let { img ->
+            img.attr("data-src").ifBlank { img.attr("src") }.ifBlank { null }
         }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val targetPath = request.data.trim().trim('/')
-        val url = when {
-            targetPath.isEmpty() && page == 1 -> "$mainUrl/"
-            targetPath.isEmpty() -> "$mainUrl/page/$page/"
-            page == 1 -> "$mainUrl/$targetPath/"
-            else -> "$mainUrl/$targetPath/page/$page/"
-        }
-
+        val url = if (page <= 1) request.data else "${request.data.removeSuffix("/")}/page/$page/"
         val items = mutableListOf<SearchResponse>()
         try {
             val html = app.get(url, headers = defaultHeaders).text
             val doc = Jsoup.parse(html)
+            val cards = doc.select(".animahd-card, article")
 
-            val cards = doc.select(".animahd-card, article.post, .top10-post")
             for (card in cards) {
-                val href = card.selectFirst("a")?.attr("href") ?: card.attr("href")
-                if (href.isBlank()) continue
+                val aTag = if (card.tagName() == "a") card else card.selectFirst("a") ?: continue
+                val rawLink = aTag.attr("href").ifBlank { card.attr("href") }
+                if (rawLink.isBlank()) continue
 
-                val title = card.selectFirst(".animahd-card-title, .article__title a, .entry-title, h2, h3")?.text()?.trim()
-                    ?: card.attr("title").ifBlank { "Featured Anime" }
+                val cleanUrl = resolveCleanUrl(rawLink)
+                val title = card.selectFirst(".animahd-card-title, h3, h2, .entry-title")?.text()?.trim()
+                    ?: aTag.text().trim().ifBlank { "Anime" }
 
-                val poster = card.selectFirst("img")?.let { img ->
-                    img.attr("src").ifBlank { img.attr("data-src") }
-                }
+                val poster = extractPoster(card)
 
-                val cleanUrl = resolveCleanUrl(href)
                 items.add(newTvSeriesSearchResponse(title, cleanUrl, TvType.Anime) {
                     this.posterUrl = poster
                 })
             }
         } catch (e: Exception) {}
-
         return newHomePageResponse(request.name, items)
     }
 
@@ -93,29 +100,25 @@ class AnimeHDProvider : MainAPI() {
         val encQuery = URLEncoder.encode(query.trim(), "UTF-8")
         val searchUrl = "$mainUrl/?s=$encQuery"
         val results = mutableListOf<SearchResponse>()
-
         try {
             val html = app.get(searchUrl, headers = defaultHeaders).text
             val doc = Jsoup.parse(html)
+            val cards = doc.select("article, .animahd-card")
 
-            val articles = doc.select("article, .animahd-card")
-            for (elem in articles) {
-                val aTag = elem.selectFirst(".article__title a, .entry-title a, a.animahd-card, a") ?: continue
-                val rawLink = aTag.attr("href").ifBlank { elem.attr("href") }
+            for (card in cards) {
+                val aTag = card.selectFirst(".article__title a, .entry-title a, a.animahd-card, a") ?: continue
+                val rawLink = aTag.attr("href").ifBlank { card.attr("href") }
                 if (rawLink.isBlank()) continue
 
-                val title = aTag.text().ifBlank { elem.selectFirst("h2, h3")?.text() ?: "Unknown" }.trim()
-                val poster = elem.selectFirst("img")?.let { img ->
-                    img.attr("src").ifBlank { img.attr("data-src") }
-                }
-
+                val title = aTag.text().ifBlank { card.selectFirst("h2, h3")?.text() ?: "Unknown" }.trim()
+                val poster = extractPoster(card)
                 val cleanLink = resolveCleanUrl(rawLink)
+
                 results.add(newTvSeriesSearchResponse(title, cleanLink, TvType.Anime) {
                     this.posterUrl = poster
                 })
             }
         } catch (e: Exception) {}
-
         return results
     }
 
@@ -128,21 +131,25 @@ class AnimeHDProvider : MainAPI() {
             .replace("- A Universe Of Anime", "", ignoreCase = true)
             .trim()
 
-        val plot = doc.selectFirst(".entry-content p, .ff-synopsis, meta[property='og:description']")?.text()
-            ?: doc.selectFirst("meta[name='description']")?.attr("content")
+        val plot = doc.selectFirst(".entry-content p:not(:empty), .ff-synopsis")?.text()?.ifBlank { null }
+            ?: doc.selectFirst("meta[property='og:description']")?.attr("content")?.ifBlank { null }
+            ?: doc.selectFirst("meta[name='description']")?.attr("content")?.ifBlank { null }
 
-        val poster = doc.selectFirst(".animahd-poster img, .ff-poster-wrap img, .entry-content img[src*='upload']")?.let {
-            it.attr("src").ifBlank { it.attr("data-src") }
+        val poster = doc.selectFirst(".animahd-poster, [style*='background-image']")?.attr("style")?.let {
+            Regex("""url\(['"]?([^'"\)]+)['"]?\)""").find(it)?.groupValues?.get(1)
         } ?: doc.selectFirst("meta[property='og:image']")?.attr("content")
+          ?: doc.selectFirst(".animahd-poster img, .ff-poster-wrap img, .entry-content img[src*='upload']")?.let {
+              it.attr("data-src").ifBlank { it.attr("src") }
+          }
 
         val episodesList = mutableListOf<Episode>()
         val epElements = doc.select(".app-ep-row-item, a:has(.gdrive-ep-meta), a[href*='player/']")
-
         var epCounter = 1
+
         for (el in epElements) {
             val rawHref = el.attr("href")
             val seasonName = el.attr("data-season").ifBlank { "Season 1" }
-            val seasonNum = Regex("""\d+""").find(seasonName)?.value?.toIntOrNull() ?: 1
+            var seasonNum = Regex("""\d+""").find(seasonName)?.value?.toIntOrNull() ?: 1
 
             var fileId: String? = el.selectFirst(".gdrive-ep-meta")?.attr("data-fileid")?.ifBlank { null }
                 ?: el.attr("data-fileid").ifBlank { null }
@@ -160,18 +167,30 @@ class AnimeHDProvider : MainAPI() {
             }
 
             if (fileId.isNullOrBlank()) continue
-
             val id = fileId
-            val epTitle = el.selectFirst(".gdrive-ep-meta div:first-child, .ff-ep-row-title")?.text()?.trim()
+
+            val rawEpText = el.selectFirst(".gdrive-ep-meta div:first-child, .ff-ep-row-title")?.text()?.trim()
                 ?: "Episode $epCounter"
 
-            val epNum = Regex("""(?i)(?:E|Episode)\s*(\d+)""").find(epTitle)?.groupValues?.get(1)?.toIntOrNull()
-                ?: epCounter
+            // Parse Season and Episode numbers if embedded like S01E01
+            val sMatch = Regex("""(?i)s(\d+)e(\d+)""").find(rawEpText)
+            val epNum = if (sMatch != null) {
+                seasonNum = sMatch.groupValues[1].toIntOrNull() ?: seasonNum
+                sMatch.groupValues[2].toIntOrNull() ?: epCounter
+            } else {
+                Regex("""(?i)(?:E|Episode)\s*(\d+)""").find(rawEpText)?.groupValues?.get(1)?.toIntOrNull() ?: epCounter
+            }
+
+            // Clean episode display title
+            val cleanEpName = rawEpText.replace(Regex("""(?i)^\[ANIMAHD\.COM\]\s*"""), "")
+                .replace(Regex("""(?i)\.(mkv|mp4)$"""), "")
+                .trim()
+                .ifBlank { "Episode $epCounter" }
 
             val epThumb = "https://drive.google.com/thumbnail?id=$id&sz=w400"
 
             episodesList.add(newEpisode("$mainUrl/player/?file_id=$id") {
-                this.name = epTitle
+                this.name = cleanEpName
                 this.season = seasonNum
                 this.episode = epNum
                 this.posterUrl = epThumb
@@ -210,54 +229,19 @@ class AnimeHDProvider : MainAPI() {
         }
 
         if (fileId.isBlank()) return false
-
         var foundLink = false
 
-        // SERVER 1: Fast Direct 1080p Stream (Google UserContent)
-        try {
-            val directStreamUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
-            callback.invoke(
-                newExtractorLink(
-                    source = name,
-                    name = "$name · Google Drive Direct [1080p]",
-                    url = directStreamUrl,
-                    type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = "https://drive.google.com/"
-                    this.quality = Qualities.P1080.value
-                }
-            )
-            foundLink = true
-        } catch (e: Exception) {}
+        val workerHeaders = mapOf(
+            "User-Agent" to USER_AGENT,
+            "Referer" to "$DEST_ORIGIN/",
+            "Accept" to "*/*"
+        )
 
-        // SERVER 2: UC Direct Stream (High Compatibility Mirror)
+        // SERVER 1: Primary Official AnimaHD Worker Stream
+        var destHtml = ""
         try {
-            val ucStreamUrl = "https://drive.google.com/uc?id=$fileId&export=download"
-            callback.invoke(
-                newExtractorLink(
-                    source = name,
-                    name = "$name · Fast Stream Mirror",
-                    url = ucStreamUrl,
-                    type = ExtractorLinkType.VIDEO
-                ) {
-                    this.referer = "https://drive.google.com/"
-                    this.quality = Qualities.P720.value
-                }
-            )
-            foundLink = true
-        } catch (e: Exception) {}
-
-        // SERVER 3: CloudStream Built-In Google Drive Extractor
-        try {
-            if (loadExtractor("https://drive.google.com/file/d/$fileId/preview", "https://drive.google.com/", subtitleCallback, callback)) {
-                foundLink = true
-            }
-        } catch (e: Exception) {}
-
-        // SERVER 4: AnimaHD Secure Player Destination
-        try {
-            val destUrl = "https://youranimewatchingdestination.animahd.online/?id=$fileId"
-            val destHtml = app.get(
+            val destUrl = "$DEST_ORIGIN/?id=$fileId"
+            destHtml = app.get(
                 destUrl,
                 headers = mapOf(
                     "Referer" to "$mainUrl/",
@@ -270,17 +254,110 @@ class AnimeHDProvider : MainAPI() {
                 callback.invoke(
                     newExtractorLink(
                         source = name,
-                        name = "$name · AnimaHD Worker Stream",
+                        name = "$name · Primary HD Stream (1080p)",
                         url = srcMatch,
                         type = ExtractorLinkType.VIDEO
                     ) {
-                        this.referer = "https://youranimewatchingdestination.animahd.online/"
+                        this.referer = "$DEST_ORIGIN/"
+                        this.headers = workerHeaders
                         this.quality = Qualities.P1080.value
                     }
                 )
                 foundLink = true
             }
         } catch (e: Exception) {}
+
+        // SERVER 2: High-Speed Direct Google Drive Stream (with virus-warning bypass & quota verification)
+        try {
+            val driveUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
+            val initialRes = app.get(
+                driveUrl,
+                headers = mapOf("User-Agent" to USER_AGENT)
+            )
+            val cookie = initialRes.headers["set-cookie"]?.split(";")?.firstOrNull() ?: ""
+            val body = initialRes.text
+
+            // Only emit if not quota-limited so ExoPlayer never receives error HTML
+            if (!body.contains("Quota exceeded", ignoreCase = true) && !body.contains("Too many users", ignoreCase = true)) {
+                val uuid = Regex("""name=["']uuid["']\s+value=["']([^"']+)["']""").find(body)?.groupValues?.get(1)
+                val confirm = Regex("""name=["']confirm["']\s+value=["']([^"']+)["']""").find(body)?.groupValues?.get(1) ?: "t"
+
+                val confirmedDlUrl = if (!uuid.isNullOrBlank()) {
+                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm&uuid=$uuid"
+                } else {
+                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm"
+                }
+
+                val driveHeaders = mutableMapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Referer" to "https://drive.google.com/"
+                )
+                if (cookie.isNotBlank()) {
+                    driveHeaders["Cookie"] = cookie
+                }
+
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = "$name · Google Drive Direct [High-Speed]",
+                        url = confirmedDlUrl,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        this.referer = "https://drive.google.com/"
+                        this.headers = driveHeaders
+                        this.quality = Qualities.P1080.value
+                    }
+                )
+                foundLink = true
+            }
+        } catch (e: Exception) {}
+
+        // SERVER 3: Dedicated Proxy Download Stream
+        if (destHtml.isNotBlank()) {
+            try {
+                val proxyDl = Regex("""proxyDownloadUrl\s*=\s*['"]([^'"]+)['"]""").find(destHtml)?.groupValues?.get(1)
+                if (!proxyDl.isNullOrBlank()) {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = name,
+                            name = "$name · Fast Mirror (Direct Download)",
+                            url = proxyDl,
+                            type = ExtractorLinkType.VIDEO
+                        ) {
+                            this.referer = "$DEST_ORIGIN/"
+                            this.headers = workerHeaders
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                    foundLink = true
+                }
+            } catch (e: Exception) {}
+
+            // SERVER 4: Fallback Alternative Player Gateway
+            try {
+                val fallbackQuery = Regex("""href=['"]([^'"]*(?:fallback=1|\?eid=[^'"]+))['"]""").find(destHtml)?.groupValues?.get(1)
+                if (!fallbackQuery.isNullOrBlank()) {
+                    val fullFbUrl = if (fallbackQuery.startsWith("http")) fallbackQuery else "$DEST_ORIGIN/$fallbackQuery"
+                    val fbHtml = app.get(fullFbUrl, headers = mapOf("Referer" to "$DEST_ORIGIN/", "User-Agent" to USER_AGENT)).text
+                    val fbDl = Regex("""id=['"]dl-btn-fallback['"][^>]*href=['"]([^'"]+)['"]""").find(fbHtml)?.groupValues?.get(1)
+                    if (!fbDl.isNullOrBlank()) {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = name,
+                                name = "$name · Alternate Player Stream",
+                                url = fbDl,
+                                type = ExtractorLinkType.VIDEO
+                            ) {
+                                this.referer = "$DEST_ORIGIN/"
+                                this.headers = workerHeaders
+                                this.quality = Qualities.P1080.value
+                            }
+                        )
+                        foundLink = true
+                    }
+                }
+            } catch (e: Exception) {}
+        }
 
         return foundLink
     }
