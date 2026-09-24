@@ -1,44 +1,5 @@
 [
   {
-    "name": "AnimeHD",
-    "internalName": "AnimeHDPlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/AnimeHDPlugin.cs3",
-    "apiVersion": 1,
-    "description": "AnimeHD (AnimaHD) - Watch Anime & Movies in HD Multi-Audio with Direct Google Drive Fast Stream",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "en",
-    "iconUrl": "https://animahd.com/wp-content/uploads/2026/08/cropped-imageedit_4_6148516294-192x192.png"
-  },  
-  {
-    "name": "AnimeSalt",
-    "internalName": "AnimeSaltPlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/AnimeSaltPlugin.cs3",
-    "apiVersion": 1,
-    "description": "AnimeSalt Provider",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Anime",
-      "AnimeMovie",
-      "OVA"
-    ],
-    "language": "en",
-    "iconUrl": "https://animesalt.cx/wp-content/uploads/cropped-AnimeSalticon-270x270.png"
-  },
-  {
     "name": "Blakite Anime",
     "internalName": "BlakitePlugin",
     "version": 1,
@@ -94,39 +55,5 @@
     ],
     "language": "en",
     "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png"
-  },
-  {
-    "name": "VidSrc",
-    "internalName": "VidSrcPlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/VidSrcPlugin.cs3",
-    "description": "VidSrc (https://vidsrc.sbs/) - Watch Movies & TV Series in HD with multi-server playback (Pro Multi, CineSrc, Videasy 4K, VidSrc)",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "en",
-    "iconUrl": "https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png"
-  },
-  {
-    "name": "Prime Video",
-    "internalName": "PrimeVideoPlugin",
-    "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/PrimeVideoPlugin.cs3",
-    "description": "Prime Video - Watch Movies & Series in HD",
-    "authors": [
-      "error-898-15"
-    ],
-    "status": 1,
-    "tvTypes": [
-      "Movie",
-      "TvSeries"
-    ],
-    "language": "en",
-    "iconUrl": "https://images2.imgbox.com/6c/fb/hHqTqE7b_o.png"
   }
     ]
