@@ -2,58 +2,79 @@
   {
     "name": "Blakite Anime",
     "internalName": "BlakitePlugin",
+    "pluginClassName": "com.uchiharepo.blakite.BlakitePlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/BlakitePlugin.cs3",
     "apiVersion": 1,
-    "description": "Blakite Provider",
+    "status": 1,
     "authors": [
       "error-898-15"
     ],
-    "status": 1,
+    "description": "Blakite Anime - Watch Hindi & English Dubbed/Subbed Anime Online Free with multi-quality Rumble Cloud HLS streaming",
     "tvTypes": [
       "Anime",
-      "AnimeMovie",
-      "OVA"
+      "Movie",
+      "Cartoon"
     ],
-    "language": "en",
-    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937"
+    "language": "hi",
+    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/BlakitePlugin.cs3"
+  },
+  {
+    "name": "iStreamFlare",
+    "internalName": "IstreamflarePlugin",
+    "pluginClassName": "com.uchiharepo.istreamflare.IstreamflarePlugin",
+    "version": 1,
+    "apiVersion": 1,
+    "status": 1,
+    "authors": [
+      "error-898-15"
+    ],
+    "description": "iStreamFlare - Stream Latest Movies & Web Series with Multi-Language Audio and High Quality DASH/HLS Playback",
+    "tvTypes": [
+      "Movie",
+      "TvSeries"
+    ],
+    "language": "hi",
+    "iconUrl": "https://blogger.googleusercontent.com/img/a/AVvXsEgWJNM8v7dkKlHDuBncLOZsjiURJtbxv6de_W_TkIg75W51emlvr-3DATj02j__QUikkzjxhYKv8jYtQp4lc04xObvSTvthIHg_DA0Ud4SRiEUKqralljdfKnUumPN96NEBQwW6y0SpVKcCCPzuIwh8on5sgzjH7BT5PpR6_vp_qS7Qia8OMj04qz-DyMw=s937",
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/IstreamflarePlugin.cs3"
   },
   {
     "name": "Gogoanime",
     "internalName": "GogoanimePlugin",
+    "pluginClassName": "com.uchiharepo.gogoanime.GogoanimePlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/GogoanimePlugin.cs3",
     "apiVersion": 1,
-    "description": "Gogoanime Provider",
+    "status": 1,
     "authors": [
       "error-898-15"
     ],
-    "status": 1,
+    "description": "Gogoanime - Watch HD & Subbed Anime Online with Fast Original Servers",
     "tvTypes": [
       "Anime",
       "AnimeMovie",
-      "OVA"
+      "Movie",
+      "TvSeries"
     ],
     "language": "en",
-    "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png"
+    "iconUrl": "https://i3.wp.com/gogoanime.by/wp-content/uploads/2024/05/cropped-favicon-2-192x192.png",
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/GogoanimePlugin.cs3"
   },
   {
     "name": "YouTube",
     "internalName": "YoutubePlugin",
+    "pluginClassName": "com.uchiharepo.youtube.YoutubePlugin",
     "version": 1,
-    "url": "https://raw.githubusercontent.com/error-898-15/Allanime_repo/build/YoutubePlugin.cs3",
     "apiVersion": 1,
-    "description": "YouTube - Stream trending videos, music, gaming, news, and official channels directly on CloudStream",
+    "status": 1,
     "authors": [
       "error-898-15"
     ],
-    "status": 1,
+    "description": "YouTube - Watch trending and search YouTube videos",
     "tvTypes": [
-      "Others",
-      "Live",
-      "TvSeries"
+      "Others"
     ],
     "language": "en",
-    "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png"
+    "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/512px-YouTube_full-color_icon_%282017%29.svg.png",
+    "url": "https://raw.githubusercontent.com/error-898-15/Uchiharepo/builds/YoutubePlugin.cs3"
   }
     ]
