@@ -82,13 +82,11 @@ class AnimeHDProvider : MainAPI() {
                 val rawLink = aTag.attr("href").ifBlank { card.attr("href") }
                 if (rawLink.isBlank()) continue
 
-                val cleanUrl = resolveCleanUrl(rawLink)
-                val title = card.selectFirst(".animahd-card-title, h3, h2, .entry-title")?.text()?.trim()
-                    ?: aTag.text().trim().ifBlank { "Anime" }
-
+                val title = aTag.text().ifBlank { card.selectFirst("h2, h3")?.text() ?: "Unknown" }.trim()
                 val poster = extractPoster(card)
+                val cleanLink = resolveCleanUrl(rawLink)
 
-                items.add(newTvSeriesSearchResponse(title, cleanUrl, TvType.Anime) {
+                items.add(newTvSeriesSearchResponse(title, cleanLink, TvType.Anime) {
                     this.posterUrl = poster
                 })
             }
@@ -97,11 +95,11 @@ class AnimeHDProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encQuery = URLEncoder.encode(query.trim(), "UTF-8")
-        val searchUrl = "$mainUrl/?s=$encQuery"
         val results = mutableListOf<SearchResponse>()
         try {
-            val html = app.get(searchUrl, headers = defaultHeaders).text
+            val encodedQuery = URLEncoder.encode(query, "UTF-8")
+            val url = "$mainUrl/?s=$encodedQuery"
+            val html = app.get(url, headers = defaultHeaders).text
             val doc = Jsoup.parse(html)
             val cards = doc.select("article, .animahd-card")
 
@@ -144,8 +142,8 @@ class AnimeHDProvider : MainAPI() {
 
         val episodesList = mutableListOf<Episode>()
         val epElements = doc.select(".app-ep-row-item, a:has(.gdrive-ep-meta), a[href*='player/']")
-        var epCounter = 1
 
+        var epCounter = 1
         for (el in epElements) {
             val rawHref = el.attr("href")
             val seasonName = el.attr("data-season").ifBlank { "Season 1" }
@@ -167,8 +165,8 @@ class AnimeHDProvider : MainAPI() {
             }
 
             if (fileId.isNullOrBlank()) continue
-            val id = fileId
 
+            val id = fileId
             val rawEpText = el.selectFirst(".gdrive-ep-meta div:first-child, .ff-ep-row-title")?.text()?.trim()
                 ?: "Episode $epCounter"
 
@@ -237,7 +235,11 @@ class AnimeHDProvider : MainAPI() {
             "Accept" to "*/*"
         )
 
-        // SERVER 1: Primary Official AnimaHD Worker Stream
+        // =========================================================================
+        // SERVER 1: Primary Official AnimaHD High-Speed Worker Stream
+        // Solves 3003 by ensuring .mkv container extension is detected by ExoPlayer
+        // Solves 2004 by using live token session and authentic destination headers
+        // =========================================================================
         var destHtml = ""
         try {
             val destUrl = "$DEST_ORIGIN/?id=$fileId"
@@ -251,11 +253,17 @@ class AnimeHDProvider : MainAPI() {
 
             val srcMatch = Regex("""<source[^>]+src=['"]([^'"]+)['"]""").find(destHtml)?.groupValues?.get(1)
             if (!srcMatch.isNullOrBlank() && !srcMatch.contains("error")) {
+                // Fix Container Unsupported (3003): The upstream streams are MKV (Matroska) containers.
+                // Replace erroneous &ext=.mp4 with &ext=.mkv and append anchor tag so ExoPlayer loads MatroskaExtractor.
+                val containerFixedUrl = srcMatch.replace("&ext=.mp4", "&ext=.mkv").let { url ->
+                    if (!url.contains(".mkv")) "$url#video.mkv" else url
+                }
+
                 callback.invoke(
                     newExtractorLink(
                         source = name,
-                        name = "$name · Primary HD Stream (1080p)",
-                        url = srcMatch,
+                        name = "$name · High-Speed HD Stream (1080p MKV)",
+                        url = containerFixedUrl,
                         type = ExtractorLinkType.VIDEO
                     ) {
                         this.referer = "$DEST_ORIGIN/"
@@ -267,7 +275,10 @@ class AnimeHDProvider : MainAPI() {
             }
         } catch (e: Exception) {}
 
-        // SERVER 2: High-Speed Direct Google Drive Stream (with virus-warning bypass & quota verification)
+        // =========================================================================
+        // SERVER 2: Google Drive Direct Download (Validated to prevent 2004 / 3003)
+        // Checks virus scan confirmation and verifies file is NOT quota-exceeded.
+        // =========================================================================
         try {
             val driveUrl = "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0"
             val initialRes = app.get(
@@ -277,15 +288,19 @@ class AnimeHDProvider : MainAPI() {
             val cookie = initialRes.headers["set-cookie"]?.split(";")?.firstOrNull() ?: ""
             val body = initialRes.text
 
-            // Only emit if not quota-limited so ExoPlayer never receives error HTML
-            if (!body.contains("Quota exceeded", ignoreCase = true) && !body.contains("Too many users", ignoreCase = true)) {
+            // Only proceed if file is NOT quota-limited or removed
+            val isQuotaExceeded = body.contains("Quota exceeded", ignoreCase = true) ||
+                    body.contains("Too many users", ignoreCase = true) ||
+                    body.contains("Error 404", ignoreCase = true)
+
+            if (!isQuotaExceeded) {
                 val uuid = Regex("""name=["']uuid["']\s+value=["']([^"']+)["']""").find(body)?.groupValues?.get(1)
                 val confirm = Regex("""name=["']confirm["']\s+value=["']([^"']+)["']""").find(body)?.groupValues?.get(1) ?: "t"
 
                 val confirmedDlUrl = if (!uuid.isNullOrBlank()) {
-                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm&uuid=$uuid"
+                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm&uuid=$uuid#video.mkv"
                 } else {
-                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm"
+                    "https://drive.usercontent.google.com/download?id=$fileId&export=download&authuser=0&confirm=$confirm#video.mkv"
                 }
 
                 val driveHeaders = mutableMapOf(
@@ -299,7 +314,7 @@ class AnimeHDProvider : MainAPI() {
                 callback.invoke(
                     newExtractorLink(
                         source = name,
-                        name = "$name · Google Drive Direct [High-Speed]",
+                        name = "$name · Google Drive Direct [High-Speed MKV]",
                         url = confirmedDlUrl,
                         type = ExtractorLinkType.VIDEO
                     ) {
@@ -312,16 +327,21 @@ class AnimeHDProvider : MainAPI() {
             }
         } catch (e: Exception) {}
 
-        // SERVER 3: Dedicated Proxy Download Stream
+        // =========================================================================
+        // SERVER 3: Dedicated Proxy Mirror Download Stream
+        // =========================================================================
         if (destHtml.isNotBlank()) {
             try {
                 val proxyDl = Regex("""proxyDownloadUrl\s*=\s*['"]([^'"]+)['"]""").find(destHtml)?.groupValues?.get(1)
                 if (!proxyDl.isNullOrBlank()) {
+                    val fixedProxyUrl = proxyDl.replace("&ext=.mp4", "&ext=.mkv").let {
+                        if (!it.contains(".mkv")) "$it#video.mkv" else it
+                    }
                     callback.invoke(
                         newExtractorLink(
                             source = name,
-                            name = "$name · Fast Mirror (Direct Download)",
-                            url = proxyDl,
+                            name = "$name · Fast Mirror Download (1080p)",
+                            url = fixedProxyUrl,
                             type = ExtractorLinkType.VIDEO
                         ) {
                             this.referer = "$DEST_ORIGIN/"
@@ -333,7 +353,9 @@ class AnimeHDProvider : MainAPI() {
                 }
             } catch (e: Exception) {}
 
+            // =====================================================================
             // SERVER 4: Fallback Alternative Player Gateway
+            // =====================================================================
             try {
                 val fallbackQuery = Regex("""href=['"]([^'"]*(?:fallback=1|\?eid=[^'"]+))['"]""").find(destHtml)?.groupValues?.get(1)
                 if (!fallbackQuery.isNullOrBlank()) {
@@ -341,11 +363,14 @@ class AnimeHDProvider : MainAPI() {
                     val fbHtml = app.get(fullFbUrl, headers = mapOf("Referer" to "$DEST_ORIGIN/", "User-Agent" to USER_AGENT)).text
                     val fbDl = Regex("""id=['"]dl-btn-fallback['"][^>]*href=['"]([^'"]+)['"]""").find(fbHtml)?.groupValues?.get(1)
                     if (!fbDl.isNullOrBlank()) {
+                        val fixedFbUrl = fbDl.replace("&ext=.mp4", "&ext=.mkv").let {
+                            if (!it.contains(".mkv")) "$it#video.mkv" else it
+                        }
                         callback.invoke(
                             newExtractorLink(
                                 source = name,
-                                name = "$name · Alternate Player Stream",
-                                url = fbDl,
+                                name = "$name · Alternate Player Stream (1080p)",
+                                url = fixedFbUrl,
                                 type = ExtractorLinkType.VIDEO
                             ) {
                                 this.referer = "$DEST_ORIGIN/"
@@ -358,6 +383,13 @@ class AnimeHDProvider : MainAPI() {
                 }
             } catch (e: Exception) {}
         }
+
+        // =========================================================================
+        // SERVER 5: Universal Google Drive Embed Fallback
+        // =========================================================================
+        try {
+            loadExtractor("https://drive.google.com/file/d/$fileId/preview", subtitleCallback, callback)
+        } catch (e: Exception) {}
 
         return foundLink
     }
